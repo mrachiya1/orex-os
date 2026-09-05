@@ -43,12 +43,9 @@ export function SignInForm({
   function submitForgotPassword() {
     startResetTransition(async () => {
       // Always show the same generic confirmation, success or failure --
-      // never reveal whether this email has an account.
-      try {
-        await requestPasswordReset({ email });
-      } catch {
-        // intentionally swallowed, see above
-      }
+      // never reveal whether this email has an account (requestPasswordReset
+      // itself always returns ok:true; nothing to branch on here).
+      await requestPasswordReset({ email });
       setForgotSent(true);
     });
   }
@@ -58,21 +55,25 @@ export function SignInForm({
     setResult(null);
 
     startTransition(async () => {
-      try {
-        if (mode === "password") {
-          await signInWithPassword({ email, password });
-          if (onSignedIn) {
-            onSignedIn();
-          } else {
-            router.push("/");
-            router.refresh();
-          }
-        } else {
-          await signInWithMagicLink({ email }, onMagicLinkRedirect);
-          setResult({ kind: "magic-link-sent" });
+      if (mode === "password") {
+        const res = await signInWithPassword({ email, password });
+        if (!res.ok) {
+          setResult({ kind: "error", message: res.error });
+          return;
         }
-      } catch (err) {
-        setResult({ kind: "error", message: err instanceof Error ? err.message : "Sign in failed" });
+        if (onSignedIn) {
+          onSignedIn();
+        } else {
+          router.push("/");
+          router.refresh();
+        }
+      } else {
+        const res = await signInWithMagicLink({ email }, onMagicLinkRedirect);
+        if (!res.ok) {
+          setResult({ kind: "error", message: res.error });
+          return;
+        }
+        setResult({ kind: "magic-link-sent" });
       }
     });
   }

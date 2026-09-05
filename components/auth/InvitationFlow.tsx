@@ -14,13 +14,13 @@ function useAcceptAndRedirect() {
   function accept(token: string) {
     setError(null);
     startTransition(async () => {
-      try {
-        const result = await acceptInvitation({ token });
-        router.push(result.companySlug ? `/${result.companySlug}` : "/");
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to accept invitation");
+      const result = await acceptInvitation({ token });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      router.push(result.companySlug ? `/${result.companySlug}` : "/");
+      router.refresh();
     });
   }
 
@@ -192,18 +192,18 @@ function CreateAccountForm({
       return;
     }
     startTransition(async () => {
-      try {
-        const { hasSession } = await signUpWithPassword(
-          { email: invitedEmail, password, fullName: fullName || undefined },
-          `/accept-invite/${token}`
-        );
-        if (hasSession) {
-          onAccept();
-        } else {
-          onNeedsConfirmation();
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create account");
+      const res = await signUpWithPassword(
+        { email: invitedEmail, password, fullName: fullName || undefined },
+        `/accept-invite/${token}`
+      );
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      if (res.hasSession) {
+        onAccept();
+      } else {
+        onNeedsConfirmation();
       }
     });
   }
@@ -263,14 +263,14 @@ function PendingConfirmationScreen({
     setSent("idle");
     setErrorMessage(null);
     startTransition(async () => {
-      try {
-        await resendInvitationConfirmationEmail(token);
-        setSent("sent");
-        setCooldown(RESEND_COOLDOWN_SECONDS);
-      } catch (err) {
+      const res = await resendInvitationConfirmationEmail(token);
+      if (!res.ok) {
         setSent("error");
-        setErrorMessage(err instanceof Error ? err.message : "Failed to resend");
+        setErrorMessage(res.error);
+        return;
       }
+      setSent("sent");
+      setCooldown(RESEND_COOLDOWN_SECONDS);
     });
   }
 

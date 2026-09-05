@@ -13,6 +13,7 @@ import {
 } from "@/lib/validation/invitations";
 import { removeMemberSchema, updateMemberRoleSchema, updateMemberPermissionOverridesSchema } from "@/lib/validation/members";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/database/server";
+import type { ActionResult } from "@/lib/actions/result";
 
 const INVITATION_EXPIRY_DAYS = 7;
 
@@ -169,7 +170,16 @@ export async function previewInvitation(token: string): Promise<InvitationPrevie
   };
 }
 
-export async function acceptInvitation(input: unknown) {
+/**
+ * Returns ActionResult rather than throwing -- this is called directly from
+ * the accept-invite Client Component, and Next.js redacts thrown-error
+ * messages from Server Actions in production builds (see
+ * lib/actions/result.ts), which would otherwise turn every one of these
+ * specific, user-facing messages into an unhelpful generic digest.
+ */
+export async function acceptInvitation(
+  input: unknown
+): Promise<ActionResult<{ companyId: string; companySlug: string | null }>> {
   const { token } = acceptInvitationSchema.parse(input);
   const user = await requireCurrentUser();
   const tokenHash = hashInvitationToken(token);
@@ -182,20 +192,21 @@ export async function acceptInvitation(input: unknown) {
     .eq("token_hash", tokenHash)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!invitation) throw new Error("Invalid invitation");
+  if (error) return { ok: false, error: "Something went wrong. Please try again." };
+  if (!invitation) return { ok: false, error: "Invalid invitation" };
 
   if (invitation.status !== "pending") {
-    throw new Error("This invitation has already been used or revoked");
+    return { ok: false, error: "This invitation has already been used or revoked" };
   }
   if (new Date(invitation.expires_at).getTime() < Date.now()) {
     await service.from("invitations").update({ status: "expired" }).eq("id", invitation.id);
-    throw new Error("This invitation has expired");
+    return { ok: false, error: "This invitation has expired" };
   }
   if (user.email?.toLowerCase() !== invitation.email.toLowerCase()) {
-    throw new Error(
-      "This invitation was sent to a different email address. Sign in with that email to accept it."
-    );
+    return {
+      ok: false,
+      error: "This invitation was sent to a different email address. Sign in with that email to accept it.",
+    };
   }
 
   // company_members' uniqueness constraint is a PARTIAL index (one active
@@ -210,7 +221,7 @@ export async function acceptInvitation(input: unknown) {
     .eq("company_id", invitation.company_id)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (existingError) throw new Error(existingError.message);
+  if (existingError) return { ok: false, error: "Something went wrong. Please try again." };
 
   const permissionOverrides = invitation.permission_overrides ?? {};
   const membershipError = existingMembership
@@ -238,7 +249,7 @@ export async function acceptInvitation(input: unknown) {
           permission_overrides: permissionOverrides,
         })
       ).error;
-  if (membershipError) throw new Error(membershipError.message);
+  if (membershipError) return { ok: false, error: "Something went wrong. Please try again." };
 
   await service
     .from("invitations")
@@ -265,7 +276,7 @@ export async function acceptInvitation(input: unknown) {
     ? invitation.companies[0]?.slug
     : (invitation.companies as { slug: string } | null)?.slug;
 
-  return { companyId: invitation.company_id, companySlug: companySlug ?? null };
+  return { ok: true, companyId: invitation.company_id, companySlug: companySlug ?? null };
 }
 
 export async function revokeInvitation(input: unknown) {

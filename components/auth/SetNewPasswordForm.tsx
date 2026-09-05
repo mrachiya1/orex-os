@@ -20,16 +20,16 @@ export function SetNewPasswordForm() {
       return;
     }
     startTransition(async () => {
-      try {
-        await updatePassword({ password });
-        setSuccess(true);
-        setTimeout(() => {
-          router.push("/");
-          router.refresh();
-        }, 1200);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to update password");
+      const res = await updatePassword({ password });
+      if (!res.ok) {
+        setError(res.error);
+        return;
       }
+      setSuccess(true);
+      setTimeout(() => {
+        router.push("/");
+        router.refresh();
+      }, 1200);
     });
   }
 

@@ -10,6 +10,9 @@ import {
   requestPasswordResetSchema,
   updatePasswordSchema,
 } from "@/lib/validation/auth";
+import type { ActionResult } from "@/lib/actions/result";
+
+export type { ActionResult } from "@/lib/actions/result";
 
 /**
  * Every redirect-carrying auth call (sign-up confirmation, magic link)
@@ -24,11 +27,12 @@ function buildCallbackUrl(redirectPath?: string): string {
   return `${baseUrl}/auth/callback?next=${encodeURIComponent(safePath)}`;
 }
 
-export async function signInWithPassword(input: unknown) {
+export async function signInWithPassword(input: unknown): Promise<ActionResult> {
   const parsed = signInWithPasswordSchema.parse(input);
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword(parsed);
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /**
@@ -47,7 +51,10 @@ export async function signInWithPassword(input: unknown) {
  * where it is fully revalidated before membership is created (never
  * trusted just because it was valid before the confirmation round-trip).
  */
-export async function signUpWithPassword(input: unknown, redirectPath?: string) {
+export async function signUpWithPassword(
+  input: unknown,
+  redirectPath?: string
+): Promise<ActionResult<{ hasSession: boolean }>> {
   const parsed = signUpWithPasswordSchema.parse(input);
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.auth.signUp({
@@ -58,12 +65,12 @@ export async function signUpWithPassword(input: unknown, redirectPath?: string) 
       emailRedirectTo: buildCallbackUrl(redirectPath),
     },
   });
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
   // If email confirmation is required, Supabase returns no session here --
   // the caller (the invitation flow) needs to know so it can show "check
   // your inbox" instead of immediately trying to accept the invitation as
   // an unauthenticated request.
-  return { hasSession: Boolean(data.session) };
+  return { ok: true, hasSession: Boolean(data.session) };
 }
 
 /**
@@ -76,10 +83,10 @@ export async function signUpWithPassword(input: unknown, redirectPath?: string) 
  * so a person can't hammer the button, but that's a UX nicety, not the
  * security boundary.
  */
-export async function resendInvitationConfirmationEmail(token: string) {
+export async function resendInvitationConfirmationEmail(token: string): Promise<ActionResult> {
   const preview = await previewInvitation(token);
   if (preview.status !== "valid") {
-    throw new Error("This invitation is no longer valid.");
+    return { ok: false, error: "This invitation is no longer valid." };
   }
 
   const supabase = await createServerSupabaseClient();
@@ -88,7 +95,8 @@ export async function resendInvitationConfirmationEmail(token: string) {
     email: preview.email,
     options: { emailRedirectTo: buildCallbackUrl(`/accept-invite/${token}`) },
   });
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /**
@@ -97,14 +105,15 @@ export async function resendInvitationConfirmationEmail(token: string) {
  * magic link -- passed straight to Supabase's own emailRedirectTo, never
  * stored in browser localStorage or any other client-side mechanism.
  */
-export async function signInWithMagicLink(input: unknown, redirectPath?: string) {
+export async function signInWithMagicLink(input: unknown, redirectPath?: string): Promise<ActionResult> {
   const parsed = signInWithMagicLinkSchema.parse(input);
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.email,
     options: { emailRedirectTo: buildCallbackUrl(redirectPath) },
   });
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /**
@@ -117,14 +126,15 @@ export async function signInWithMagicLink(input: unknown, redirectPath?: string)
  * link lands on /auth/callback -> /reset-password with a real session, and
  * (b) collapse any transport error into the same generic message rather
  * than surfacing Supabase's own wording, which is one more place existence
- * could theoretically leak.
+ * could theoretically leak. Always returns ok:true on purpose.
  */
-export async function requestPasswordReset(input: unknown) {
+export async function requestPasswordReset(input: unknown): Promise<ActionResult> {
   const parsed = requestPasswordResetSchema.parse(input);
   const supabase = await createServerSupabaseClient();
   await supabase.auth.resetPasswordForEmail(parsed.email, {
     redirectTo: buildCallbackUrl("/reset-password"),
   });
+  return { ok: true };
 }
 
 /**
@@ -134,12 +144,13 @@ export async function requestPasswordReset(input: unknown) {
  * person clicked a real Supabase recovery link (or is already signed in);
  * requireCurrentUser() is the enforcement, not a client-supplied identity.
  */
-export async function updatePassword(input: unknown) {
+export async function updatePassword(input: unknown): Promise<ActionResult> {
   const parsed = updatePasswordSchema.parse(input);
   await requireCurrentUser();
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.updateUser({ password: parsed.password });
-  if (error) throw new Error(error.message);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function signOut() {
