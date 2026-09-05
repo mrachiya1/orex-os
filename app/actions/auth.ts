@@ -2,7 +2,14 @@
 
 import { createServerSupabaseClient } from "@/lib/database/server";
 import { previewInvitation } from "@/app/actions/team";
-import { signInWithPasswordSchema, signInWithMagicLinkSchema, signUpWithPasswordSchema } from "@/lib/validation/auth";
+import { requireCurrentUser } from "@/lib/auth/session";
+import {
+  signInWithPasswordSchema,
+  signInWithMagicLinkSchema,
+  signUpWithPasswordSchema,
+  requestPasswordResetSchema,
+  updatePasswordSchema,
+} from "@/lib/validation/auth";
 
 /**
  * Every redirect-carrying auth call (sign-up confirmation, magic link)
@@ -97,6 +104,41 @@ export async function signInWithMagicLink(input: unknown, redirectPath?: string)
     email: parsed.email,
     options: { emailRedirectTo: buildCallbackUrl(redirectPath) },
   });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Always returns the same generic result regardless of whether `email`
+ * actually has an Orex OS account (AGENTS.md/account-enumeration rule for
+ * this flow: "Never reveal whether an arbitrary account exists"). Supabase
+ * itself doesn't leak existence from this call either -- resetPasswordForEmail
+ * responds the same way whether or not the address is registered -- so this
+ * wrapper mainly exists to (a) route through buildCallbackUrl so the reset
+ * link lands on /auth/callback -> /reset-password with a real session, and
+ * (b) collapse any transport error into the same generic message rather
+ * than surfacing Supabase's own wording, which is one more place existence
+ * could theoretically leak.
+ */
+export async function requestPasswordReset(input: unknown) {
+  const parsed = requestPasswordResetSchema.parse(input);
+  const supabase = await createServerSupabaseClient();
+  await supabase.auth.resetPasswordForEmail(parsed.email, {
+    redirectTo: buildCallbackUrl("/reset-password"),
+  });
+}
+
+/**
+ * Sets a new password for the CURRENTLY AUTHENTICATED user only -- there is
+ * no email/userId parameter, so this can never be pointed at someone else's
+ * account. The session that authorizes this call only exists because the
+ * person clicked a real Supabase recovery link (or is already signed in);
+ * requireCurrentUser() is the enforcement, not a client-supplied identity.
+ */
+export async function updatePassword(input: unknown) {
+  const parsed = updatePasswordSchema.parse(input);
+  await requireCurrentUser();
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.auth.updateUser({ password: parsed.password });
   if (error) throw new Error(error.message);
 }
 

@@ -14,3 +14,11 @@ export const signUpWithPasswordSchema = z.object({
   password: z.string().min(8).max(200),
   fullName: z.string().max(120).optional(),
 });
+
+export const requestPasswordResetSchema = z.object({
+  email: z.string().email(),
+});
+
+export const updatePasswordSchema = z.object({
+  password: z.string().min(8).max(200),
+});
