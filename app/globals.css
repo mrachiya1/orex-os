@@ -1,26 +1,337 @@
 @import "tailwindcss";
 
+/*
+ * Orex OS design tokens — approved dark operating-system palette
+ * (docs/design-system.md "Color Tokens"). Committed dark-only: this is a
+ * fixed product identity, not a theme users toggle, so tokens are painted
+ * once in :root rather than gated behind prefers-color-scheme.
+ *
+ * Legacy variable names (--background, --foreground, --surface, --muted,
+ * --accent, --success/--warning/--danger) are kept as aliases so every
+ * pre-existing component that already reads them (Team/Projects/Brain/
+ * Audit tables and forms) upgrades to the new palette with zero per-file
+ * edits. New surfaces should prefer the --surface-1/2/3 / --text-* names.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  /* base surfaces */
+  --background: #08090a;
+  --background-secondary: #0b0c0c;
+  --surface-1: #0e1010;
+  --surface-2: #111313;
+  --surface-3: #151717;
+  --surface-raised: #181a19;
+  --surface-sunken: #0d0f0e;
+
+  /* legacy aliases */
+  --foreground: var(--text-primary);
+  --surface: var(--surface-2);
+  --overlay: var(--surface-raised);
+
+  /* borders */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-medium: rgba(255, 255, 255, 0.11);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border: var(--border-subtle);
+
+  /* text */
+  --text-primary: #f1f0ea;
+  --text-secondary: #a5a59f;
+  --text-muted: #70726f;
+  --muted: var(--text-secondary);
+
+  /* accent — restrained silver, the app-wide default */
+  --accent: #d8d6c8;
+  --accent-foreground: #101212;
+  --accent-dim: rgba(216, 214, 200, 0.14);
+
+  /* company accents (applied narrowly — switcher badge, active nav, header
+     underline — never a full-page reskin, per docs/design-system.md) */
+  --company-group: #d8d6c8;
+  --company-orextic: #c8703b;
+  --company-orex-studios: #8ea0ac;
+
+  /* semantic */
+  --success: #6fb98a;
+  --success-dim: rgba(111, 185, 138, 0.16);
+  --warning: #d1a34e;
+  --warning-dim: rgba(209, 163, 78, 0.16);
+  --danger: #c96a5c;
+  --danger-dim: rgba(201, 106, 92, 0.16);
+  --info: #6f93b9;
+  --info-dim: rgba(111, 147, 185, 0.16);
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-foreground: var(--text-primary);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border-subtle);
 }
 
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-dim);
+}
+
+.num,
+.font-data {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-display {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+}
+
+/* ---------------------------------- buttons ---------------------------------- */
+
+.ox-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-s);
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+.ox-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ox-btn-primary {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.ox-btn-primary:hover:not(:disabled) {
+  background: #e5e3d6;
+}
+.ox-btn-secondary {
+  background: var(--surface-raised);
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+.ox-btn-secondary:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.ox-btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.ox-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.ox-btn-danger {
+  background: transparent;
+  border-color: var(--border-medium);
+  color: var(--danger);
+}
+.ox-btn-danger:hover:not(:disabled) {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+.ox-btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+/* ---------------------------------- forms ---------------------------------- */
+
+.ox-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ox-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ox-input,
+.ox-select,
+.ox-textarea {
+  height: 36px;
+  padding: 0 11px;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+.ox-textarea {
+  height: auto;
+  padding: 9px 11px;
+  min-height: 80px;
+  resize: vertical;
+}
+.ox-input:focus,
+.ox-select:focus,
+.ox-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ox-help {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ox-error {
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+/* ---------------------------------- surfaces ---------------------------------- */
+
+.ox-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-l);
+}
+.ox-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ox-card-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ---------------------------------- tables ---------------------------------- */
+
+.ox-table {
+  width: 100%;
+  font-size: 12.5px;
+  border-collapse: collapse;
+}
+.ox-table thead th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ox-table tbody td {
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+.ox-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.ox-table tbody tr {
+  transition: background-color 0.1s ease;
+}
+.ox-table tbody tr:hover {
+  background: var(--surface-3);
+}
+
+/* ---------------------------------- pills / badges ---------------------------------- */
+
+.ox-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ox-pill-neutral {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+}
+.ox-pill-success {
+  background: var(--success-dim);
+  color: var(--success);
+}
+.ox-pill-warning {
+  background: var(--warning-dim);
+  color: var(--warning);
+}
+.ox-pill-danger {
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+.ox-pill-info {
+  background: var(--info-dim);
+  color: var(--info);
+}
+
+/* ---------------------------------- misc ---------------------------------- */
+
+.ox-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 4px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+.ox-empty-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-medium);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.ox-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ox-empty-body {
+  font-size: 12px;
+  max-width: 320px;
+}
+
+.ox-focus-ring:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.001ms !important;
+  }
 }

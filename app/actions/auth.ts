@@ -1,0 +1,106 @@
+"use server";
+
+import { createServerSupabaseClient } from "@/lib/database/server";
+import { previewInvitation } from "@/app/actions/team";
+import { signInWithPasswordSchema, signInWithMagicLinkSchema, signUpWithPasswordSchema } from "@/lib/validation/auth";
+
+/**
+ * Every redirect-carrying auth call (sign-up confirmation, magic link)
+ * shares this: build an absolute /auth/callback URL from APP_URL (never a
+ * hard-coded host, so this works unchanged on localhost, a Vercel preview,
+ * or the eventual production domain), carrying only an in-app relative
+ * `next` path -- never an open redirect, never anything sensitive.
+ */
+function buildCallbackUrl(redirectPath?: string): string {
+  const safePath = redirectPath && redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "/";
+  const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
+  return `${baseUrl}/auth/callback?next=${encodeURIComponent(safePath)}`;
+}
+
+export async function signInWithPassword(input: unknown) {
+  const parsed = signInWithPasswordSchema.parse(input);
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.auth.signInWithPassword(parsed);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Only ever reachable through a valid invitation context in the UI (the
+ * public /sign-in page hides sign-up entirely -- AGENTS.md "Do NOT allow
+ * arbitrary public users to register"). `fullName` flows into
+ * raw_user_meta_data, which handle_new_user() (migration 0004) copies into
+ * user_profiles.full_name on insert -- no separate profile-write step
+ * needed after sign-up.
+ *
+ * `redirectPath` (the inviting `/accept-invite/[token]` page) is passed
+ * through to Supabase's own `emailRedirectTo` on the confirmation email --
+ * not stored in localStorage or any other client-side mechanism -- so
+ * clicking "Confirm your email" lands back on /auth/callback, which
+ * exchanges the code for a session and forwards to that same invitation,
+ * where it is fully revalidated before membership is created (never
+ * trusted just because it was valid before the confirmation round-trip).
+ */
+export async function signUpWithPassword(input: unknown, redirectPath?: string) {
+  const parsed = signUpWithPasswordSchema.parse(input);
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.auth.signUp({
+    email: parsed.email,
+    password: parsed.password,
+    options: {
+      ...(parsed.fullName ? { data: { full_name: parsed.fullName } } : {}),
+      emailRedirectTo: buildCallbackUrl(redirectPath),
+    },
+  });
+  if (error) throw new Error(error.message);
+  // If email confirmation is required, Supabase returns no session here --
+  // the caller (the invitation flow) needs to know so it can show "check
+  // your inbox" instead of immediately trying to accept the invitation as
+  // an unauthenticated request.
+  return { hasSession: Boolean(data.session) };
+}
+
+/**
+ * Resend a signup confirmation email for a pending invitation. Deliberately
+ * takes the invitation `token`, never a client-supplied email -- the
+ * invitation's own (already-validated) email is what gets resent to, so
+ * this can never be used to target an arbitrary address or enumerate
+ * whether some other email has an account. Supabase's own per-project rate
+ * limiting is the real backstop; the UI adds a client-side cooldown on top
+ * so a person can't hammer the button, but that's a UX nicety, not the
+ * security boundary.
+ */
+export async function resendInvitationConfirmationEmail(token: string) {
+  const preview = await previewInvitation(token);
+  if (preview.status !== "valid") {
+    throw new Error("This invitation is no longer valid.");
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: preview.email,
+    options: { emailRedirectTo: buildCallbackUrl(`/accept-invite/${token}`) },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * `redirectPath` lets a caller return the user to a specific page (e.g. the
+ * invitation they came from) instead of the app root after clicking the
+ * magic link -- passed straight to Supabase's own emailRedirectTo, never
+ * stored in browser localStorage or any other client-side mechanism.
+ */
+export async function signInWithMagicLink(input: unknown, redirectPath?: string) {
+  const parsed = signInWithMagicLinkSchema.parse(input);
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.auth.signInWithOtp({
+    email: parsed.email,
+    options: { emailRedirectTo: buildCallbackUrl(redirectPath) },
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function signOut() {
+  const supabase = await createServerSupabaseClient();
+  await supabase.auth.signOut();
+}
