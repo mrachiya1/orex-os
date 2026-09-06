@@ -70,12 +70,24 @@ export async function sendMessage(
         ? getToolRiskLabel(result.toolName)
         : null;
 
+    // A pending action_proposed carries requestId/toolName so a reopened
+    // session can reconstruct the approval card -- without these, the
+    // Confirm/Cancel buttons only ever existed for the live moment the
+    // proposal was created, and reopening the session left a proposed
+    // action with no way to act on it (a real reported bug: a 26-task
+    // import sat proposed forever because refreshing the page lost the
+    // only UI that could approve it).
     const assistantContent = result.ok ? summarizeResult(result) : result.error;
+    const assistantMetadata: Record<string, unknown> = result.ok ? { kind: result.kind, riskLabel } : { error: true };
+    if (result.ok && result.kind === "action_proposed") {
+      assistantMetadata.requestId = result.requestId;
+      assistantMetadata.toolName = result.toolName;
+    }
     await service.from("agent_messages").insert({
       session_id: session.id,
       role: "assistant",
       content: assistantContent,
-      metadata: result.ok ? { kind: result.kind, riskLabel } : { error: true },
+      metadata: assistantMetadata,
     });
     await service.from("agent_sessions").update({ last_message_at: new Date().toISOString() }).eq("id", session.id);
 
@@ -92,6 +104,44 @@ function summarizeResult(result: { ok: true } & CompanyBrainCommandResult): stri
   if (result.kind === "needs_clarification") return result.question;
   if (result.kind === "action_proposed") return `Proposed: ${result.summary}`;
   return `Done: ${result.summary}`;
+}
+
+const recordSystemMessageSchema = z.object({
+  sessionId: z.string().uuid(),
+  content: z.string().min(1).max(500),
+});
+
+/**
+ * Persists an approve/reject outcome as a real system message. Previously
+ * "Action confirmed."/"Action cancelled." only ever existed in client
+ * state (addLocal), never written to agent_messages -- reopening the
+ * session lost that resolution entirely, which combined with the proposal
+ * reconstruction fix meant a resolved action could look pending again.
+ */
+export async function recordSystemMessage(input: unknown): Promise<ActionResult<object>> {
+  try {
+    const parsed = recordSystemMessageSchema.parse(input);
+    const user = await requireCurrentUser();
+
+    const session = await getSession(parsed.sessionId);
+    if (!session) return { ok: false, error: "Session not found." };
+    if (!(await canMutateSession(session, user.id))) {
+      return { ok: false, error: "You don't have permission to post to this conversation." };
+    }
+
+    const service = createServiceRoleClient();
+    const now = new Date().toISOString();
+    await service.from("agent_messages").insert({
+      session_id: session.id,
+      role: "system",
+      content: parsed.content,
+    });
+    await service.from("agent_sessions").update({ last_message_at: now }).eq("id", session.id);
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: toSafeAIErrorMessage(err) };
+  }
 }
 
 export async function listMessages(sessionId: string) {

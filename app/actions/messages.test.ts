@@ -35,7 +35,7 @@ vi.mock("@/lib/database/server", () => ({
   createServiceRoleClient: () => ({ from: () => mockChain() }),
 }));
 
-const { sendMessage } = await import("./messages");
+const { sendMessage, recordSystemMessage } = await import("./messages");
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
@@ -86,5 +86,47 @@ describe("sendMessage", () => {
     runCompanyBrainCommand.mockRejectedValue(new Error("boom"));
     const result = await sendMessage({ sessionId, content: "hi" });
     expect(result.ok).toBe(false);
+  });
+
+  it("REGRESSION: persists requestId/toolName on an action_proposed message so a reopened session can reconstruct the approval card", async () => {
+    runCompanyBrainCommand.mockResolvedValue({
+      ok: true,
+      kind: "action_proposed",
+      requestId: "req-1",
+      toolName: "projects.tasks.create_batch",
+      summary: "Import 26 tasks into Before launching orextic",
+    });
+
+    const result = await sendMessage({ sessionId, content: "add these tasks" });
+
+    expect(result.ok).toBe(true);
+    expect(inserted[1]).toMatchObject({
+      role: "assistant",
+      metadata: expect.objectContaining({ requestId: "req-1", toolName: "projects.tasks.create_batch" }),
+    });
+  });
+});
+
+describe("recordSystemMessage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    inserted.length = 0;
+    requireCurrentUser.mockResolvedValue({ id: "user-1" });
+    getSession.mockResolvedValue({ id: sessionId, organisation_id: "org-1", company_id: "company-1", created_by: "user-1" });
+    canMutateSession.mockResolvedValue(true);
+  });
+
+  it("REGRESSION: persists the approve/reject outcome as a real system message (previously only existed in client state, so reopening the session lost it, letting an already-resolved proposal look pending again)", async () => {
+    const result = await recordSystemMessage({ sessionId, content: "Action confirmed." });
+    expect(result.ok).toBe(true);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ role: "system", content: "Action confirmed." });
+  });
+
+  it("refuses for a session the caller cannot mutate", async () => {
+    canMutateSession.mockResolvedValue(false);
+    const result = await recordSystemMessage({ sessionId, content: "Action confirmed." });
+    expect(result.ok).toBe(false);
+    expect(inserted).toHaveLength(0);
   });
 });

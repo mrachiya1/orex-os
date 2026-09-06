@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createSession } from "@/app/actions/sessions";
-import { sendMessage } from "@/app/actions/messages";
+import { sendMessage, recordSystemMessage } from "@/app/actions/messages";
 import { decideAgentAction, type CompanyBrainCommandResult } from "@/app/actions/agent-actions";
 import { deriveSessionTitle } from "@/lib/intelligence/title";
 import { AgentSelector, type SelectableAgent } from "./AgentSelector";
@@ -76,7 +76,26 @@ export function IntelligenceWorkspace({
   const [messages, setMessages] = useState<StoredMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null);
+  // Reconstructs an unresolved action proposal on reopen -- previously the
+  // Confirm/Cancel card only existed for the live moment it was created;
+  // refreshing or reopening the session left a proposed action with no way
+  // to act on it (real bug: a 26-task batch import sat proposed forever).
+  // Unresolved = the last message is the proposal itself, with nothing
+  // (e.g. "Action confirmed."/"Action cancelled.") after it.
+  const [pendingAction, setPendingAction] = useState<PendingActionState | null>(() => {
+    const last = initialMessages[initialMessages.length - 1];
+    if (!last || last.role !== "assistant" || last.metadata?.kind !== "action_proposed") return null;
+    const requestId = last.metadata.requestId;
+    const toolName = last.metadata.toolName;
+    if (typeof requestId !== "string" || typeof toolName !== "string") return null;
+    return {
+      requestId,
+      agentName: "Founder Advisor",
+      toolName,
+      summary: last.content,
+      riskLabel: typeof last.metadata.riskLabel === "string" ? last.metadata.riskLabel : null,
+    };
+  });
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -156,7 +175,11 @@ export function IntelligenceWorkspace({
     startDecideTransition(async () => {
       const result = await decideAgentAction(requestId, outcome);
       setPendingAction(null);
-      addLocal("system", result.ok ? (outcome === "approved" ? "Action confirmed." : "Action cancelled.") : result.error);
+      const text = result.ok ? (outcome === "approved" ? "Action confirmed." : "Action cancelled.") : result.error;
+      addLocal("system", text);
+      // Persisted (not just local state) so reopening the session never
+      // shows an already-resolved proposal as pending again.
+      if (sessionId) await recordSystemMessage({ sessionId, content: text });
     });
   }
 
