@@ -24,3 +24,11 @@ export function listToolsForAgent(allowedToolNames: readonly string[]) {
     .map((name) => TOOL_REGISTRY[name])
     .filter((tool): tool is AnyToolDefinition => Boolean(tool));
 }
+
+const RISK_LABELS = ["Read Only", "Safe", "Important", "Critical"] as const;
+
+/** The real registered risk level for a tool (prompts/013 LEVEL 0-3) -- never a per-request guess. */
+export function getToolRiskLabel(toolName: string): (typeof RISK_LABELS)[number] | null {
+  const tool = getTool(toolName);
+  return tool ? RISK_LABELS[tool.riskLevel] : null;
+}

@@ -5,6 +5,7 @@ const hasPermission = vi.fn();
 const hasOrgPermission = vi.fn();
 const hasProjectAccess = vi.fn();
 const getSession = vi.fn();
+const canMutateSession = vi.fn();
 
 vi.mock("@/lib/auth/session", () => ({
   requireCurrentUser: (...a: unknown[]) => requireCurrentUser(...a),
@@ -15,7 +16,10 @@ vi.mock("@/lib/permissions", () => ({
   hasProjectAccess: (...a: unknown[]) => hasProjectAccess(...a),
   PERMISSIONS: { PROJECTS_READ: "projects.read", KNOWLEDGE_READ: "knowledge.read", DECISIONS_READ: "decisions.read" },
 }));
-vi.mock("./sessions", () => ({ getSession: (...a: unknown[]) => getSession(...a) }));
+vi.mock("./sessions", () => ({
+  getSession: (...a: unknown[]) => getSession(...a),
+  canMutateSession: (...a: unknown[]) => canMutateSession(...a),
+}));
 
 function mockChain(result: { data: unknown; error: { message: string } | null }) {
   const chain: Record<string, unknown> = {};
@@ -47,7 +51,14 @@ describe("attachReference", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireCurrentUser.mockResolvedValue({ id: "user-1" });
-    getSession.mockResolvedValue({ id: sessionId, organisation_id: "org-1", company_id: "company-1" });
+    getSession.mockResolvedValue({ id: sessionId, organisation_id: "org-1", company_id: "company-1", created_by: "user-1" });
+    canMutateSession.mockResolvedValue(true);
+  });
+
+  it("SECURITY: refuses to attach into a session the caller cannot mutate", async () => {
+    canMutateSession.mockResolvedValue(false);
+    const result = await attachReference({ sessionId, attachmentType: "project_ref", referenceId });
+    expect(result.ok).toBe(false);
   });
 
   it("attaches a project reference the caller can read", async () => {

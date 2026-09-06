@@ -77,7 +77,7 @@ describe("setAgentEnabled", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireCurrentUser.mockResolvedValue({ id: "user-1" });
-    fromResponses = { agents: { data: { id: "agent-1", organisation_id: "org-1", company_id: null }, error: null } };
+    fromResponses = { agents: { data: { id: "agent-1", organisation_id: "org-1", company_id: null, enabled: true, mode: "MANUAL" }, error: null } };
   });
 
   it("requires agents.enable -- a Viewer cannot toggle an agent", async () => {
@@ -86,11 +86,17 @@ describe("setAgentEnabled", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("disables an agent and writes an audit log entry", async () => {
+  it("disables an agent and writes an audit log entry with the real before/after state (not null)", async () => {
     requirePermission.mockResolvedValue(undefined);
     const result = await setAgentEnabled({ companyId, agentKey: "advisor", enabled: false });
     expect(result.ok).toBe(true);
-    expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "agent.disabled" }));
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "agent.disabled",
+        beforeState: { enabled: true, mode: "MANUAL" },
+        afterState: { enabled: false, mode: "MANUAL" },
+      })
+    );
   });
 });
 
@@ -98,7 +104,7 @@ describe("setAgentMode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireCurrentUser.mockResolvedValue({ id: "user-1" });
-    fromResponses = { agents: { data: { id: "agent-1", organisation_id: "org-1" }, error: null } };
+    fromResponses = { agents: { data: { id: "agent-1", organisation_id: "org-1", enabled: true, mode: "OFF" }, error: null } };
   });
 
   it("agent management requires agents.manage", async () => {
@@ -111,6 +117,19 @@ describe("setAgentMode", () => {
     requirePermission.mockResolvedValue(undefined);
     const result = await setAgentMode({ companyId, agentKey: "advisor", mode: "AUTO_SAFE" });
     expect(result.ok).toBe(true);
+  });
+
+  it("records the real previous mode as before_state, not null (audit completeness fix)", async () => {
+    requirePermission.mockResolvedValue(undefined);
+    const result = await setAgentMode({ companyId, agentKey: "advisor", mode: "MANUAL" });
+    expect(result.ok).toBe(true);
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "agent.mode_changed",
+        beforeState: { enabled: true, mode: "OFF" },
+        afterState: { enabled: true, mode: "MANUAL" },
+      })
+    );
   });
 });
 

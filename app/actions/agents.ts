@@ -69,7 +69,7 @@ export async function setAgentEnabled(input: unknown): Promise<ActionResult<{ en
     const service = createServiceRoleClient();
     const { data: agent, error: findError } = await service
       .from("agents")
-      .select("id, organisation_id, company_id")
+      .select("id, organisation_id, company_id, enabled, mode")
       .eq("agent_key", parsed.agentKey)
       .maybeSingle();
     if (findError) return { ok: false, error: "Something went wrong. Please try again." };
@@ -85,7 +85,8 @@ export async function setAgentEnabled(input: unknown): Promise<ActionResult<{ en
       resourceType: "agents",
       resourceId: agent.id,
       action: parsed.enabled ? "agent.enabled" : "agent.disabled",
-      afterState: { enabled: parsed.enabled },
+      beforeState: { enabled: agent.enabled, mode: agent.mode },
+      afterState: { enabled: parsed.enabled, mode: agent.mode },
     });
 
     return { ok: true, enabled: parsed.enabled };
@@ -104,7 +105,7 @@ export async function setAgentMode(input: unknown): Promise<ActionResult<{ mode:
     const service = createServiceRoleClient();
     const { data: agent, error: findError } = await service
       .from("agents")
-      .select("id, organisation_id")
+      .select("id, organisation_id, enabled, mode")
       .eq("agent_key", parsed.agentKey)
       .maybeSingle();
     if (findError) return { ok: false, error: "Something went wrong. Please try again." };
@@ -120,7 +121,8 @@ export async function setAgentMode(input: unknown): Promise<ActionResult<{ mode:
       resourceType: "agents",
       resourceId: agent.id,
       action: "agent.mode_changed",
-      afterState: { mode: parsed.mode },
+      beforeState: { enabled: agent.enabled, mode: agent.mode },
+      afterState: { enabled: agent.enabled, mode: parsed.mode },
     });
 
     return { ok: true, mode: parsed.mode };

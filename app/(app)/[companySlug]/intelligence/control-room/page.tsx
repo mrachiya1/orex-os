@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { getCompanyBySlug } from "@/lib/database/companies";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { getControlRoomSummary } from "@/app/actions/agents";
@@ -48,6 +49,13 @@ export default async function ControlRoomPage({
 
   return (
     <div className="flex flex-1 flex-col">
+      <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-8 py-3 text-[12px] text-[var(--text-muted)]">
+        <Link href={`/${companySlug}/intelligence`} className="ox-focus-ring hover:text-[var(--text-primary)]">
+          Orex Intelligence
+        </Link>
+        <span>/</span>
+        <span className="text-[var(--text-secondary)]">Control Room</span>
+      </div>
       <PageHeader title="Control Room" description={`Per-company AI oversight for ${company.name}.`} />
       <div className="flex flex-col gap-4 p-8 pt-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">

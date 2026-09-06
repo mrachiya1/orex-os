@@ -24,9 +24,7 @@ import {
   IconTeams,
   IconSettings,
   IconSearch,
-  IconAgents,
-  IconSessions,
-  IconControlRoom,
+  IconSparkle,
 } from "@/components/ui/icons";
 
 interface NavItem {
@@ -63,10 +61,7 @@ function buildNav(slug: string, hasGroupAccess: boolean, canViewTeam: boolean): 
     {
       label: "Intelligence",
       items: [
-        { label: "Chat", href: `/${slug}/intelligence/chat`, icon: IconAdvisor },
-        { label: "Agents", href: `/${slug}/intelligence/agents`, icon: IconAgents },
-        { label: "Sessions", href: `/${slug}/intelligence/sessions`, icon: IconSessions },
-        { label: "Control Room", href: `/${slug}/intelligence/control-room`, icon: IconControlRoom },
+        { label: "Orex Intelligence", href: `/${slug}/intelligence`, icon: IconSparkle },
         { label: "Company Brain", href: `/${slug}/brain`, icon: IconBrain },
         { label: "Decisions", href: `/${slug}/brain/decisions`, icon: IconDecisions },
         { label: "Opportunities", icon: IconOpportunities },
@@ -143,7 +138,9 @@ export function Sidebar({
             </div>
             <div className="flex flex-col gap-0.5">
               {group.items.map((item) => {
-                const isActive = !!item.href && pathname === item.href;
+                const isActive =
+                  !!item.href &&
+                  (pathname === item.href || (item.href !== `/${activeSlug}` && pathname.startsWith(`${item.href}/`)));
                 const Icon = item.icon;
                 if (!item.href) {
                   return (

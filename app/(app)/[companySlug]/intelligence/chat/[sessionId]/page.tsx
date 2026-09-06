@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { getSession } from "@/app/actions/sessions";
+import { getSession, listSessions } from "@/app/actions/sessions";
 import { listMessages } from "@/app/actions/messages";
-import { ChatSessionView } from "@/components/intelligence/ChatSessionView";
+import { listAgents, getControlRoomSummary } from "@/app/actions/agents";
+import { getIntelligenceContext } from "@/lib/intelligence/context";
+import { IntelligenceWorkspace } from "@/components/intelligence/IntelligenceWorkspace";
+import { getCompanyBySlug } from "@/lib/database/companies";
 
 export default async function ChatSessionPage({
   params,
@@ -13,18 +15,29 @@ export default async function ChatSessionPage({
   const session = await getSession(sessionId);
   if (!session) notFound();
 
-  const messages = await listMessages(sessionId);
+  const company = await getCompanyBySlug(companySlug);
+  if (!company) notFound();
+
+  const [messages, sessions, agents, contextSummary, controlRoomSummary] = await Promise.all([
+    listMessages(sessionId),
+    listSessions(session.company_id, session.organisation_id),
+    listAgents(company.id),
+    getIntelligenceContext(company.id),
+    getControlRoomSummary(company.id).catch(() => ({ spendToday: 0 })),
+  ]);
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-8 py-3 text-[12px] text-[var(--text-muted)]">
-        <Link href={`/${companySlug}/intelligence/chat`} className="ox-focus-ring hover:text-[var(--text-primary)]">
-          Orex Intelligence
-        </Link>
-        <span>/</span>
-        <span className="text-[var(--text-secondary)]">{session.title}</span>
-      </div>
-      <ChatSessionView sessionId={sessionId} initialMessages={messages as never} />
-    </div>
+    <IntelligenceWorkspace
+      companySlug={companySlug}
+      organisationId={session.organisation_id}
+      companyId={company.id}
+      companyName={company.name}
+      sessionId={sessionId}
+      initialMessages={messages as never}
+      agents={agents.map((a) => ({ agentId: a.agentId, name: a.name, enabled: a.enabled }))}
+      contextSummary={contextSummary}
+      historySessions={sessions as never}
+      spendToday={controlRoomSummary.spendToday}
+    />
   );
 }

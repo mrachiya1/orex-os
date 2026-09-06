@@ -79,6 +79,15 @@ export const PERMISSIONS = {
   AGENTS_MANAGE: "agents.manage",
   AGENTS_ENABLE: "agents.enable",
   AGENTS_APPROVE: "agents.approve",
+  /**
+   * Separate from agents.read on purpose (migration 0035): agents.read is
+   * operational visibility (agent availability/config/run summaries).
+   * This is the elevated, explicitly-granted right to read OTHER users'
+   * raw Orex Intelligence conversation content (sessions/messages/
+   * attachments). A session's own creator can always read their own
+   * conversation regardless of this permission.
+   */
+  AGENTS_AUDIT_SESSIONS: "agents.audit_sessions",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

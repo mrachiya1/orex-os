@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const requireCurrentUser = vi.fn();
 const getSession = vi.fn();
+const canMutateSession = vi.fn();
 const runCompanyBrainCommand = vi.fn();
 
 vi.mock("@/lib/auth/session", () => ({
   requireCurrentUser: (...a: unknown[]) => requireCurrentUser(...a),
 }));
-vi.mock("./sessions", () => ({ getSession: (...a: unknown[]) => getSession(...a) }));
+vi.mock("./sessions", () => ({
+  getSession: (...a: unknown[]) => getSession(...a),
+  canMutateSession: (...a: unknown[]) => canMutateSession(...a),
+}));
 vi.mock("./agent-actions", () => ({
   runCompanyBrainCommand: (...a: unknown[]) => runCompanyBrainCommand(...a),
 }));
@@ -40,13 +44,21 @@ describe("sendMessage", () => {
     vi.clearAllMocks();
     inserted.length = 0;
     requireCurrentUser.mockResolvedValue({ id: "user-1" });
-    getSession.mockResolvedValue({ id: sessionId, organisation_id: "org-1", company_id: "company-1" });
+    getSession.mockResolvedValue({ id: sessionId, organisation_id: "org-1", company_id: "company-1", created_by: "user-1" });
+    canMutateSession.mockResolvedValue(true);
   });
 
   it("returns an error when the session does not exist", async () => {
     getSession.mockResolvedValue(null);
     const result = await sendMessage({ sessionId, content: "Hi" });
     expect(result.ok).toBe(false);
+  });
+
+  it("SECURITY: refuses to post into a session the caller cannot mutate (agents.read visibility is not write authorization)", async () => {
+    canMutateSession.mockResolvedValue(false);
+    const result = await sendMessage({ sessionId, content: "Hi" });
+    expect(result.ok).toBe(false);
+    expect(inserted).toHaveLength(0);
   });
 
   it("persists the user message before invoking the agent, and the assistant's reply after", async () => {

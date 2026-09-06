@@ -113,3 +113,15 @@ export const IconControlRoom = (p: SVGProps<SVGSVGElement>) => (
 export const IconSessions = (p: SVGProps<SVGSVGElement>) => (
   <Base {...p}><path d="M4 6h16M4 12h16M4 18h10" /></Base>
 );
+export const IconSend = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4z" /></Base>
+);
+export const IconMic = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0014 0v-1" /><path d="M12 18v4M8 22h8" /></Base>
+);
+export const IconAttach = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M21.4 11.1l-8.5 8.5a4.7 4.7 0 01-6.6-6.6L15 4.3a3.1 3.1 0 014.4 4.4l-8.6 8.5a1.6 1.6 0 01-2.2-2.2l8-8" /></Base>
+);
+export const IconHistory = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.7L3 8" /><path d="M3 3v5h5M12 7v5l4 2" /></Base>
+);

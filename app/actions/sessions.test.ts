@@ -16,7 +16,7 @@ vi.mock("@/lib/permissions", () => ({
   hasOrgPermission: (...a: unknown[]) => hasOrgPermission(...a),
   requirePermission: (...a: unknown[]) => requirePermission(...a),
   requireOrgPermission: (...a: unknown[]) => requireOrgPermission(...a),
-  PERMISSIONS: { AGENTS_USE: "agents.use" },
+  PERMISSIONS: { AGENTS_USE: "agents.use", AGENTS_MANAGE: "agents.manage" },
 }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: (...a: unknown[]) => writeAuditLog(...a) }));
 vi.mock("@/lib/ai/agents/registry", () => ({ getAgent: (...a: unknown[]) => getAgent(...a) }));
@@ -42,7 +42,7 @@ vi.mock("@/lib/database/server", () => ({
   }),
 }));
 
-const { createSession, listSessions, getSession, archiveSession } = await import("./sessions");
+const { createSession, listSessions, getSession, renameSession, archiveSession } = await import("./sessions");
 
 const organisationId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -66,12 +66,33 @@ describe("createSession", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("creates a session referencing the resolved agent's real id", async () => {
+  it("rejects a disabled agent", async () => {
     hasPermission.mockResolvedValue(true);
-    getAgent.mockResolvedValue({ id: "agent-uuid-1" });
+    getAgent.mockResolvedValue({ id: "agent-uuid-1", enabled: false, mode: "MANUAL" });
+    const result = await createSession({ organisationId, companyId, title: "New Session", agentKey: "advisor" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("creates a session referencing the resolved agent's real id, via the service-role client (agent_sessions has no client INSERT policy)", async () => {
+    hasPermission.mockResolvedValue(true);
+    getAgent.mockResolvedValue({ id: "agent-uuid-1", enabled: true, mode: "MANUAL", organisationId, companyId: null });
     fromResponses = { agent_sessions: { data: { id: "session-1" }, error: null } };
     const result = await createSession({ organisationId, companyId, title: "New Session", agentKey: "advisor" });
     expect(result.ok).toBe(true);
+  });
+
+  it("SECURITY: rejects an agent from a different organisation even if the agent_key resolves", async () => {
+    hasPermission.mockResolvedValue(true);
+    getAgent.mockResolvedValue({ id: "agent-uuid-1", enabled: true, mode: "MANUAL", organisationId: "99999999-9999-4999-8999-999999999999", companyId: null });
+    const result = await createSession({ organisationId, companyId, title: "New Session", agentKey: "advisor" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("SECURITY: rejects an agent scoped to a different company than the one the session is being created for", async () => {
+    hasPermission.mockResolvedValue(true);
+    getAgent.mockResolvedValue({ id: "agent-uuid-1", enabled: true, mode: "MANUAL", organisationId, companyId: "88888888-8888-4888-8888-888888888888" });
+    const result = await createSession({ organisationId, companyId, title: "New Session", agentKey: "advisor" });
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -115,6 +136,31 @@ describe("listSessions / getSession", () => {
   });
 });
 
+describe("renameSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireCurrentUser.mockResolvedValue({ id: "user-1" });
+  });
+
+  it("renames via the service-role client after confirming the caller can see the session", async () => {
+    const sessionId = "44444444-4444-4444-8444-444444444444";
+    fromResponses = {
+      agent_sessions: {
+        data: { id: sessionId, organisation_id: organisationId, company_id: companyId, title: "Old", goal: null, status: "active", primary_agent_id: "agent-1", summary: null, created_by: "user-1" },
+        error: null,
+      },
+    };
+    const result = await renameSession({ sessionId, title: "New Title" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns not found for a session the caller cannot see", async () => {
+    fromResponses = { agent_sessions: { data: null, error: null } };
+    const result = await renameSession({ sessionId: "55555555-5555-4555-8555-555555555555", title: "New Title" });
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("archiveSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -125,10 +171,36 @@ describe("archiveSession", () => {
     const sessionId = "33333333-3333-4333-8333-333333333333";
     fromResponses = {
       agent_sessions: {
-        data: { id: sessionId, organisation_id: organisationId, company_id: companyId },
+        data: { id: sessionId, organisation_id: organisationId, company_id: companyId, created_by: "user-1" },
         error: null,
       },
     };
+    const result = await archiveSession({ sessionId, archived: true });
+    expect(result.ok).toBe(true);
+  });
+
+  it("SECURITY: denies archiving another user's session when the caller has neither ownership nor agents.manage (previously bypassed RLS via an unchecked service-role lookup)", async () => {
+    const sessionId = "66666666-6666-4666-8666-666666666666";
+    fromResponses = {
+      agent_sessions: {
+        data: { id: sessionId, organisation_id: organisationId, company_id: companyId, created_by: "someone-else" },
+        error: null,
+      },
+    };
+    hasPermission.mockResolvedValue(false);
+    const result = await archiveSession({ sessionId, archived: true });
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows an agents.manage holder to archive another user's session", async () => {
+    const sessionId = "77777777-7777-4777-8777-777777777777";
+    fromResponses = {
+      agent_sessions: {
+        data: { id: sessionId, organisation_id: organisationId, company_id: companyId, created_by: "someone-else" },
+        error: null,
+      },
+    };
+    hasPermission.mockResolvedValue(true);
     const result = await archiveSession({ sessionId, archived: true });
     expect(result.ok).toBe(true);
   });
