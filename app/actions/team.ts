@@ -14,6 +14,7 @@ import {
 import { removeMemberSchema, updateMemberRoleSchema, updateMemberPermissionOverridesSchema } from "@/lib/validation/members";
 import { createServerSupabaseClient, createServiceRoleClient } from "@/lib/database/server";
 import type { ActionResult } from "@/lib/actions/result";
+import { buildAppUrl } from "@/lib/config/app-url";
 
 const INVITATION_EXPIRY_DAYS = 7;
 
@@ -90,7 +91,7 @@ export async function inviteMember(input: unknown) {
     .eq("id", parsed.roleId)
     .single();
 
-  const inviteUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/accept-invite/${token}`;
+  const inviteUrl = buildAppUrl(`/accept-invite/${token}`);
 
   const emailResult = await sendInvitationEmail({
     to: parsed.email,

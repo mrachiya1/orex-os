@@ -11,21 +11,9 @@ import {
   updatePasswordSchema,
 } from "@/lib/validation/auth";
 import type { ActionResult } from "@/lib/actions/result";
+import { buildAuthCallbackUrl } from "@/lib/config/app-url";
 
 export type { ActionResult } from "@/lib/actions/result";
-
-/**
- * Every redirect-carrying auth call (sign-up confirmation, magic link)
- * shares this: build an absolute /auth/callback URL from APP_URL (never a
- * hard-coded host, so this works unchanged on localhost, a Vercel preview,
- * or the eventual production domain), carrying only an in-app relative
- * `next` path -- never an open redirect, never anything sensitive.
- */
-function buildCallbackUrl(redirectPath?: string): string {
-  const safePath = redirectPath && redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "/";
-  const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
-  return `${baseUrl}/auth/callback?next=${encodeURIComponent(safePath)}`;
-}
 
 export async function signInWithPassword(input: unknown): Promise<ActionResult> {
   const parsed = signInWithPasswordSchema.parse(input);
@@ -62,7 +50,7 @@ export async function signUpWithPassword(
     password: parsed.password,
     options: {
       ...(parsed.fullName ? { data: { full_name: parsed.fullName } } : {}),
-      emailRedirectTo: buildCallbackUrl(redirectPath),
+      emailRedirectTo: buildAuthCallbackUrl(redirectPath),
     },
   });
   if (error) return { ok: false, error: error.message };
@@ -93,7 +81,7 @@ export async function resendInvitationConfirmationEmail(token: string): Promise<
   const { error } = await supabase.auth.resend({
     type: "signup",
     email: preview.email,
-    options: { emailRedirectTo: buildCallbackUrl(`/accept-invite/${token}`) },
+    options: { emailRedirectTo: buildAuthCallbackUrl(`/accept-invite/${token}`) },
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -110,7 +98,7 @@ export async function signInWithMagicLink(input: unknown, redirectPath?: string)
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.email,
-    options: { emailRedirectTo: buildCallbackUrl(redirectPath) },
+    options: { emailRedirectTo: buildAuthCallbackUrl(redirectPath) },
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -122,7 +110,7 @@ export async function signInWithMagicLink(input: unknown, redirectPath?: string)
  * this flow: "Never reveal whether an arbitrary account exists"). Supabase
  * itself doesn't leak existence from this call either -- resetPasswordForEmail
  * responds the same way whether or not the address is registered -- so this
- * wrapper mainly exists to (a) route through buildCallbackUrl so the reset
+ * wrapper mainly exists to (a) route through buildAuthCallbackUrl so the reset
  * link lands on /auth/callback -> /reset-password with a real session, and
  * (b) collapse any transport error into the same generic message rather
  * than surfacing Supabase's own wording, which is one more place existence
@@ -132,7 +120,7 @@ export async function requestPasswordReset(input: unknown): Promise<ActionResult
   const parsed = requestPasswordResetSchema.parse(input);
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.email, {
-    redirectTo: buildCallbackUrl("/reset-password"),
+    redirectTo: buildAuthCallbackUrl("/reset-password"),
   });
   // A delivery/transport failure here (e.g. Supabase's shared email sender
   // rate-limiting) is NOT an existence leak -- it happens the same way
