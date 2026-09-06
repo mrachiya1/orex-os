@@ -1,8 +1,16 @@
 # 015 — Orex Intelligence: Visual & Interaction Redesign
 
-## Status: IMPLEMENTED — security-hardened; live end-to-end verification BLOCKED (see below)
+## Status: IMPLEMENTED — code, security hardening, and session privacy separation complete and committed (`5affc8f`, pushed to `origin/main`). Interactive browser acceptance pending the founder's own click-through.
 
-All code, tests, and a full security-hardening pass are complete and committed-ready (staged, not yet committed pending the blocker below). The redesign itself is not in question; one piece of live production *data* — unrelated to this prompt's code — currently prevents an actual click-through of the first-message flow.
+All code, tests, and two rounds of security hardening are complete. The founder re-enabled `advisor` (MANUAL mode) themselves via the live Agents page, confirmed by a real, correctly-attributed `agent.mode_changed` audit row. A live RLS impersonation test (real database, temporary fixtures created and fully cleaned up) confirmed: session creators can read their own conversations, a same-company user holding only `agents.read` cannot read another user's conversation, the founder's new `agents.audit_sessions` permission correctly grants elevated read access, and cross-company access is denied regardless of role name. No actual browser walkthrough as an authenticated user was performed by the assistant (no browser access in this environment) — that step is the founder's own next action.
+
+### Round 3 — session privacy separation (2026-09-07)
+
+`agent_sessions`/`agent_messages`/`agent_attachments` SELECT policies previously granted read access to anyone holding `agents.read` for the company — broad by design for agent *operational* visibility, but that also meant any Member/Contractor with `agents.read` could read another employee's raw conversation content. Fixed: a new, explicitly-granted permission `agents.audit_sessions` (migration `0035_session_privacy_separation.sql`) now gates reading *other* users' sessions/messages/attachments; a session's own creator can always read their own. Granted only to Founder today (least privilege by default — Director/Manager were deliberately left out pending an explicit product decision). `agents`, `agent_budgets`, `agent_runs`, `global_ai_controls` SELECT policies are untouched — operational visibility (availability, config, run summaries, cost) stays on `agents.read`.
+
+Also fixed in this round: `setAgentEnabled`/`setAgentMode` previously recorded `before_state: null` in their audit log entries (live-confirmed via a real audit row) — both now select the agent's current `enabled`/`mode` before writing and record the real before/after state.
+
+**Known, disclosed, not-yet-fixed finding**: a company-scoped member with no organisation-level role cannot see the org-wide `advisor` agent row at all (`agents_select`'s org-wide branch requires `has_org_permission`), which would make Orex Intelligence unusable for that user (`getAgent` returns null → "That agent does not exist"). Not exploitable today since all three real accounts hold organisation-level roles, but worth a deliberate decision before a real company-only Member is added.
 
 ## Files inspected
 
