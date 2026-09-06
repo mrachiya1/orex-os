@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { getCompanyBySlug } from "@/lib/database/companies";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { listSessions } from "@/app/actions/sessions";
-import { listAgents } from "@/app/actions/agents";
-import { getControlRoomSummary } from "@/app/actions/agents";
+import { listAgents, getControlRoomSummary, getRecentActivity } from "@/app/actions/agents";
 import { getIntelligenceContext } from "@/lib/intelligence/context";
 import { Card } from "@/components/ui/Surface";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -35,11 +34,13 @@ export default async function IntelligencePage({
     );
   }
 
-  const [sessions, agents, contextSummary, controlRoomSummary] = await Promise.all([
+  const [sessions, agents, contextSummary, controlRoomSummary, canManageAgents, recentActivity] = await Promise.all([
     listSessions(company.id, company.organisation_id),
     listAgents(company.id),
     getIntelligenceContext(company.id),
     getControlRoomSummary(company.id).catch(() => ({ spendToday: 0 })),
+    hasPermission(company.id, PERMISSIONS.AGENTS_ENABLE),
+    getRecentActivity(company.id).catch(() => []),
   ]);
 
   return (
@@ -54,6 +55,8 @@ export default async function IntelligencePage({
       contextSummary={contextSummary}
       historySessions={sessions as never}
       spendToday={controlRoomSummary.spendToday}
+      canManageAgents={canManageAgents}
+      recentActivity={recentActivity}
     />
   );
 }

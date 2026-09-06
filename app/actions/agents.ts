@@ -259,6 +259,29 @@ export async function getControlRoomSummary(companyId: string) {
   };
 }
 
+/** Real recent tool activity for the Intelligence workspace's Recent Activity panel -- never fabricated. */
+export interface RecentActivityRow {
+  id: string;
+  toolName: string;
+  status: string;
+  createdAt: string;
+}
+
+export async function getRecentActivity(companyId: string, limit = 5): Promise<RecentActivityRow[]> {
+  await requireCurrentUser();
+  await requirePermission(companyId, PERMISSIONS.AGENTS_READ);
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("ai_action_requests")
+    .select("id, tool_name, status, created_at")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data ?? []).map((r) => ({ id: r.id, toolName: r.tool_name, status: r.status, createdAt: r.created_at }));
+}
+
 /** Exposed for Control Room cost cards -- reuses ai_usage_events, never a duplicate ledger. */
 export async function getAgentSpend(companyId: string, agentKey: string) {
   await requireCurrentUser();

@@ -12,8 +12,9 @@ import { Composer, AttachmentChip, type PendingAttachment } from "./Composer";
 import { ActionProposalCard } from "./ActionProposalCard";
 import { ConversationHistoryDrawer, type HistorySessionRow } from "./ConversationHistoryDrawer";
 import { ContextRail } from "./ContextRail";
-import { IconHistory, IconSettings } from "@/components/ui/icons";
+import { IconHistory, IconSettings, IconSparkle } from "@/components/ui/icons";
 import type { IntelligenceContextSummary } from "@/lib/intelligence/context";
+import type { RecentActivityRow } from "@/app/actions/agents";
 
 export interface StoredMessage {
   id: string;
@@ -54,6 +55,8 @@ export function IntelligenceWorkspace({
   contextSummary,
   historySessions,
   spendToday,
+  canManageAgents,
+  recentActivity,
 }: {
   companySlug: string;
   organisationId: string;
@@ -65,6 +68,8 @@ export function IntelligenceWorkspace({
   contextSummary: IntelligenceContextSummary;
   historySessions: HistorySessionRow[];
   spendToday: number;
+  canManageAgents: boolean;
+  recentActivity: RecentActivityRow[];
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -172,7 +177,31 @@ export function IntelligenceWorkspace({
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Compact header -- deliberately smaller than the Today hero (prompts/015 Decisions #7/#9) */}
+        {/* Hero -- same gradient/hero language as the Today dashboard, scaled down; chat stays the dominant element below it. */}
+        <section className="relative overflow-hidden border-b border-[var(--border-subtle)] px-6 py-5">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(120% 160% at 88% -20%, var(--accent-dim), transparent 55%), linear-gradient(180deg, var(--surface-2) 0%, var(--surface-1) 70%)",
+            }}
+          />
+          <div className="relative flex items-center gap-2">
+            <IconSparkle width={13} height={13} className="text-[var(--text-muted)]" />
+            <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              Orex Super Brain
+            </span>
+          </div>
+          <h1 className="font-display relative mt-1.5 text-[24px] font-medium tracking-tight text-[var(--text-primary)]">
+            Orex Intelligence
+          </h1>
+          <p className="relative mt-0.5 text-[12.5px] text-[var(--text-secondary)]">
+            Ask, analyze, plan and operate Orex OS from one intelligence layer.
+          </p>
+        </section>
+
+        {/* Compact controls row */}
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-6 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -302,12 +331,15 @@ export function IntelligenceWorkspace({
 
       <div className="hidden lg:block">
         <ContextRail
+          companyId={companyId}
           companyName={companyName}
           context={contextSummary}
           agents={agents}
           activeAgentId={selectedAgentId}
           isThinking={isPending}
           manageHref={`/${companySlug}/intelligence/agents`}
+          canManageAgents={canManageAgents}
+          recentActivity={recentActivity}
           open={contextOpen}
           onClose={() => setContextOpen(false)}
           onSuggestion={applySuggestion}

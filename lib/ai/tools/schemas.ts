@@ -12,3 +12,14 @@ export const projectsSearchInputSchema = z.object({
 });
 
 export type ProjectsSearchInput = z.infer<typeof projectsSearchInputSchema>;
+
+export const projectsGetInputSchema = z.object({
+  projectId: z.string().uuid(),
+});
+export type ProjectsGetInput = z.infer<typeof projectsGetInputSchema>;
+
+export const projectsListAtRiskInputSchema = z.object({
+  companyId: z.string().uuid(),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+export type ProjectsListAtRiskInput = z.infer<typeof projectsListAtRiskInputSchema>;

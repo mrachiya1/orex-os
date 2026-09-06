@@ -30,12 +30,32 @@ const { runCompanyBrainCommand, decideAgentAction } = await import("./agent-acti
 const organisationId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
 
+const EMPTY_SNAPSHOT_RESULT = { ok: true, status: "executed", output: [] };
+
+/**
+ * Every non-greeting call now also fetches a real operational snapshot
+ * (projects.list_at_risk + decisions.list) before the classification call --
+ * this wraps a per-test `handlers` map for the tools a test actually cares
+ * about, while the snapshot tools always resolve to an empty, harmless
+ * result unless a test explicitly overrides them.
+ */
+function mockExecuteTool(handlers: Record<string, () => Promise<unknown>> = {}) {
+  executeTool.mockImplementation((toolName: string) => {
+    if (toolName in handlers) return handlers[toolName]();
+    if (toolName === "projects.list_at_risk" || toolName === "decisions.list") {
+      return Promise.resolve(EMPTY_SNAPSHOT_RESULT);
+    }
+    return Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-1" });
+  });
+}
+
 describe("runCompanyBrainCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireCurrentUser.mockResolvedValue({ id: "user-1" });
     hasPermission.mockResolvedValue(true);
     retrieveKnowledge.mockResolvedValue([]);
+    mockExecuteTool();
   });
 
   it("answers a bare greeting locally, without calling retrieval or the AI at all", async () => {
@@ -48,6 +68,8 @@ describe("runCompanyBrainCommand", () => {
     }
     expect(retrieveKnowledge).not.toHaveBeenCalled();
     expect(requestAI).not.toHaveBeenCalled();
+    // A bare greeting short-circuits before even the operational snapshot fetch.
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("does not treat a message that merely starts with a greeting word as a bare greeting", async () => {
@@ -58,6 +80,19 @@ describe("runCompanyBrainCommand", () => {
     expect(requestAI).toHaveBeenCalledTimes(1);
   });
 
+  it("fetches the real operational snapshot (at-risk projects + open decisions) before classifying, so an answer can use live data", async () => {
+    requestAI.mockResolvedValue({ data: { kind: "answer", answer: "3 projects need attention.", citedSources: [] } });
+
+    await runCompanyBrainCommand({ organisationId, companyId, question: "What needs my attention?" });
+
+    expect(executeTool).toHaveBeenCalledWith("projects.list_at_risk", { companyId, limit: 10 }, "advisor");
+    expect(executeTool).toHaveBeenCalledWith("decisions.list", { companyId, limit: 10 }, "advisor");
+    const contextArg = requestAI.mock.calls[0][0].context;
+    const keys = contextArg.fields.map((f: { key: string }) => f.key);
+    expect(keys).toContain("at_risk_projects");
+    expect(keys).toContain("open_decisions");
+  });
+
   it("returns an answer when the model classifies the message as a question", async () => {
     requestAI.mockResolvedValue({ data: { kind: "answer", answer: "We do X.", citedSources: [] } });
 
@@ -65,7 +100,8 @@ describe("runCompanyBrainCommand", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.kind).toBe("answer");
-    expect(executeTool).not.toHaveBeenCalled();
+    // Only the two read-only snapshot calls -- no project resolution/mutation tool.
+    expect(executeTool).toHaveBeenCalledTimes(2);
   });
 
   it("returns needs_clarification as-is when the model asks for it", async () => {
@@ -87,11 +123,10 @@ describe("runCompanyBrainCommand", () => {
     requestAI.mockResolvedValue({
       data: { kind: "tool_call", tool: "projects.task.create", projectNameHint: "IRWAY", title: "Send final renders" },
     });
-    executeTool.mockImplementation((toolName: string) => {
-      if (toolName === "projects.search") {
-        return Promise.resolve({ ok: true, status: "executed", output: [{ id: "proj-1", name: "IRWAY VisionPro" }] });
-      }
-      return Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-1" });
+    mockExecuteTool({
+      "projects.search": () =>
+        Promise.resolve({ ok: true, status: "executed", output: [{ id: "proj-1", name: "IRWAY VisionPro" }] }),
+      "projects.task.create": () => Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-1" }),
     });
 
     const result = await runCompanyBrainCommand({
@@ -107,39 +142,58 @@ describe("runCompanyBrainCommand", () => {
     } else {
       throw new Error("expected an action_proposed result");
     }
-    expect(executeTool).toHaveBeenNthCalledWith(1, "projects.search", { companyId, query: "IRWAY" }, "advisor");
-    expect(executeTool).toHaveBeenNthCalledWith(
-      2,
+    expect(executeTool).toHaveBeenCalledWith("projects.search", { companyId, query: "IRWAY" }, "advisor");
+    expect(executeTool).toHaveBeenCalledWith(
       "projects.task.create",
       expect.objectContaining({ projectId: "proj-1", title: "Send final renders" }),
       "advisor"
     );
   });
 
+  it("REGRESSION: asks which project instead of searching for a generic word the model guessed (e.g. 'projects') as the project name", async () => {
+    requestAI.mockResolvedValue({
+      data: { kind: "tool_call", tool: "projects.task.create", projectNameHint: "projects", title: "Backup code" },
+    });
+
+    const result = await runCompanyBrainCommand({ organisationId, companyId, question: "Add this task to my system" });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.kind).toBe("needs_clarification");
+      if (result.kind === "needs_clarification") expect(result.question).not.toContain('"projects"');
+    }
+    // Never calls projects.search for a generic word -- only the snapshot reads happened.
+    expect(executeTool).not.toHaveBeenCalledWith("projects.search", expect.anything(), expect.anything());
+  });
+
   it("asks for clarification instead of guessing when zero projects match", async () => {
     requestAI.mockResolvedValue({
       data: { kind: "tool_call", tool: "projects.task.create", projectNameHint: "Nonexistent", title: "x" },
     });
-    executeTool.mockResolvedValue({ ok: true, status: "executed", output: [] });
+    mockExecuteTool({ "projects.search": () => Promise.resolve({ ok: true, status: "executed", output: [] }) });
 
     const result = await runCompanyBrainCommand({ organisationId, companyId, question: "Add a task to Nonexistent" });
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.kind).toBe("needs_clarification");
-    expect(executeTool).toHaveBeenCalledTimes(1); // never attempted the mutation
+    // Snapshot (2) + projects.search (1) -- never attempted the mutation.
+    expect(executeTool).toHaveBeenCalledTimes(3);
   });
 
   it("asks the user to choose instead of guessing when multiple projects match", async () => {
     requestAI.mockResolvedValue({
       data: { kind: "tool_call", tool: "projects.task.create", projectNameHint: "Website", title: "x" },
     });
-    executeTool.mockResolvedValue({
-      ok: true,
-      status: "executed",
-      output: [
-        { id: "p1", name: "Website Relaunch A" },
-        { id: "p2", name: "Website Relaunch B" },
-      ],
+    mockExecuteTool({
+      "projects.search": () =>
+        Promise.resolve({
+          ok: true,
+          status: "executed",
+          output: [
+            { id: "p1", name: "Website Relaunch A" },
+            { id: "p2", name: "Website Relaunch B" },
+          ],
+        }),
     });
 
     const result = await runCompanyBrainCommand({ organisationId, companyId, question: "Add a task to Website" });
@@ -151,7 +205,7 @@ describe("runCompanyBrainCommand", () => {
     } else {
       throw new Error("expected needs_clarification");
     }
-    expect(executeTool).toHaveBeenCalledTimes(1); // never attempted the mutation
+    expect(executeTool).toHaveBeenCalledTimes(3); // snapshot (2) + projects.search (1), never the mutation
   });
 
   it("REGRESSION (production failure): a pasted checklist classified as batch_task_import resolves the project once and proposes a single batch tool call, not one call per task", async () => {
@@ -166,11 +220,11 @@ describe("runCompanyBrainCommand", () => {
         ],
       },
     });
-    executeTool.mockImplementation((toolName: string) => {
-      if (toolName === "projects.search") {
-        return Promise.resolve({ ok: true, status: "executed", output: [{ id: "proj-1", name: "Orextic Website" }] });
-      }
-      return Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-batch-1" });
+    mockExecuteTool({
+      "projects.search": () =>
+        Promise.resolve({ ok: true, status: "executed", output: [{ id: "proj-1", name: "Orextic Website" }] }),
+      "projects.tasks.create_batch": () =>
+        Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-batch-1" }),
     });
 
     const result = await runCompanyBrainCommand({
@@ -188,11 +242,10 @@ describe("runCompanyBrainCommand", () => {
     } else {
       throw new Error("expected an action_proposed batch result");
     }
-    // Exactly 2 calls total: one to resolve the project, one to propose the
-    // WHOLE batch -- never one OpenRouter/tool call per task.
-    expect(executeTool).toHaveBeenCalledTimes(2);
-    expect(executeTool).toHaveBeenNthCalledWith(
-      2,
+    // Snapshot (2) + resolve project (1) + propose the WHOLE batch (1) --
+    // never one OpenRouter/tool call per task.
+    expect(executeTool).toHaveBeenCalledTimes(4);
+    expect(executeTool).toHaveBeenCalledWith(
       "projects.tasks.create_batch",
       expect.objectContaining({
         projectId: "proj-1",
@@ -210,20 +263,23 @@ describe("runCompanyBrainCommand", () => {
     requestAI.mockResolvedValue({
       data: { kind: "batch_task_import", projectNameHint: "Website", tasks: [{ title: "a" }, { title: "b" }] },
     });
-    executeTool.mockResolvedValue({
-      ok: true,
-      status: "executed",
-      output: [
-        { id: "p1", name: "Website Relaunch A" },
-        { id: "p2", name: "Website Relaunch B" },
-      ],
+    mockExecuteTool({
+      "projects.search": () =>
+        Promise.resolve({
+          ok: true,
+          status: "executed",
+          output: [
+            { id: "p1", name: "Website Relaunch A" },
+            { id: "p2", name: "Website Relaunch B" },
+          ],
+        }),
     });
 
     const result = await runCompanyBrainCommand({ organisationId, companyId, question: "checklist for Website" });
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.kind).toBe("needs_clarification");
-    expect(executeTool).toHaveBeenCalledTimes(1); // never attempted the batch mutation
+    expect(executeTool).not.toHaveBeenCalledWith("projects.tasks.create_batch", expect.anything(), expect.anything());
   });
 
   it("never throws when the AI call itself fails", async () => {

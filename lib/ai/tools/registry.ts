@@ -1,4 +1,5 @@
 import { projectsTools } from "./projects";
+import { decisionsTools } from "./decisions";
 import type { AnyToolDefinition } from "./types";
 
 export type { AnyToolDefinition };
@@ -13,6 +14,7 @@ export type { AnyToolDefinition };
  */
 export const TOOL_REGISTRY: Record<string, AnyToolDefinition> = {
   ...(projectsTools as unknown as Record<string, AnyToolDefinition>),
+  ...(decisionsTools as unknown as Record<string, AnyToolDefinition>),
 };
 
 export function getTool(name: string): AnyToolDefinition | undefined {
