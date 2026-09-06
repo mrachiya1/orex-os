@@ -29,6 +29,9 @@ import { AIGatewayError } from "@/lib/ai/errors";
  * "model's response was not valid JSON" incident). See
  * agentCommandWireSchema below for the schema actually sent to the model.
  */
+/** Mirrors MAX_BATCH_TASK_COUNT (lib/validation/projects.ts) -- kept as a literal here rather than imported so this schema file has no dependency on project validation internals; the real enforcement is projects.tasks.create_batch's own input schema, this is just the model-facing ceiling. */
+const MAX_BATCH_TASKS = 50;
+
 export const agentCommandSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("answer"),
@@ -47,6 +50,29 @@ export const agentCommandSchema = z.discriminatedUnion("kind", [
     kind: z.literal("needs_clarification"),
     question: z.string().min(1).max(500),
   }),
+  /**
+   * A pasted checklist/multiple distinct tasks in one message (production
+   * failure fix). Never executed directly -- runCompanyBrainCommand still
+   * resolves projectNameHint deterministically via projects.search and
+   * routes the mutation through executeTool/projects.tasks.create_batch,
+   * exactly like the single tool_call variant. Capped here so an
+   * over-length model response fails validation (a clear, safe error)
+   * rather than silently creating an unbounded number of rows.
+   */
+  z.object({
+    kind: z.literal("batch_task_import"),
+    projectNameHint: z.string().min(1).max(200),
+    tasks: z
+      .array(
+        z.object({
+          title: z.string().min(1).max(200),
+          priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+          dueDate: z.string().optional(),
+        })
+      )
+      .min(1)
+      .max(MAX_BATCH_TASKS),
+  }),
 ]);
 
 export type AgentCommandResult = z.infer<typeof agentCommandSchema>;
@@ -63,7 +89,7 @@ export type AgentCommandResult = z.infer<typeof agentCommandSchema>;
  * this into a plain non-strict schema instead.
  */
 export const agentCommandWireSchema = z.object({
-  kind: z.enum(["answer", "tool_call", "needs_clarification"]),
+  kind: z.enum(["answer", "tool_call", "needs_clarification", "batch_task_import"]),
   answer: z.string().nullable(),
   citedSources: z.array(z.object({ knowledgeItemId: z.string(), title: z.string() })).nullable(),
   tool: z.literal("projects.task.create").nullable(),
@@ -72,6 +98,17 @@ export const agentCommandWireSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
   dueDate: z.string().nullable(),
   question: z.string().nullable(),
+  // batch_task_import only. Each item's own priority/dueDate stay nullable
+  // (not optional) for the same OpenAI strict-mode reason as the top level.
+  tasks: z
+    .array(
+      z.object({
+        title: z.string(),
+        priority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
+        dueDate: z.string().nullable(),
+      })
+    )
+    .nullable(),
 });
 
 export type AgentCommandWire = z.infer<typeof agentCommandWireSchema>;
@@ -98,7 +135,17 @@ export function toAgentCommandResult(wire: AgentCommandWire): AgentCommandResult
             priority: wire.priority ?? undefined,
             dueDate: wire.dueDate ?? undefined,
           }
-        : { kind: "needs_clarification" as const, question: wire.question };
+        : wire.kind === "batch_task_import"
+          ? {
+              kind: "batch_task_import" as const,
+              projectNameHint: wire.projectNameHint,
+              tasks: (wire.tasks ?? []).map((t) => ({
+                title: t.title,
+                priority: t.priority ?? undefined,
+                dueDate: t.dueDate ?? undefined,
+              })),
+            }
+          : { kind: "needs_clarification" as const, question: wire.question };
 
   const result = agentCommandSchema.safeParse(candidate);
   if (!result.success) {

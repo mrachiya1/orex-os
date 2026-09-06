@@ -13,6 +13,7 @@ describe("agentCommandWireSchema", () => {
       priority: null,
       dueDate: null,
       question: null,
+      tasks: null,
     });
     expect(result.success).toBe(true);
   });
@@ -28,6 +29,7 @@ describe("agentCommandWireSchema", () => {
       priority: null,
       dueDate: null,
       question: null,
+      tasks: null,
     });
     expect(result.success).toBe(false);
   });
@@ -45,6 +47,7 @@ describe("toAgentCommandResult", () => {
       priority: null,
       dueDate: null,
       question: null,
+      tasks: null,
     });
     expect(result).toEqual({
       kind: "answer",
@@ -64,6 +67,7 @@ describe("toAgentCommandResult", () => {
       priority: null,
       dueDate: null,
       question: null,
+      tasks: null,
     });
     if (result.kind === "answer") expect(result.citedSources).toEqual([]);
     else throw new Error("expected kind answer");
@@ -80,6 +84,7 @@ describe("toAgentCommandResult", () => {
       priority: null,
       dueDate: null,
       question: null,
+      tasks: null,
     });
     expect(result).toEqual({
       kind: "tool_call",
@@ -102,6 +107,7 @@ describe("toAgentCommandResult", () => {
       priority: null,
       dueDate: null,
       question: "Which project did you mean?",
+      tasks: null,
     });
     expect(result).toEqual({ kind: "needs_clarification", question: "Which project did you mean?" });
   });
@@ -118,6 +124,7 @@ describe("toAgentCommandResult", () => {
         priority: null,
         dueDate: null,
         question: null,
+        tasks: null,
       })
     ).toThrowError(/did not match the expected schema/);
   });
@@ -134,6 +141,68 @@ describe("toAgentCommandResult", () => {
         priority: null,
         dueDate: null,
         question: null,
+        tasks: null,
+      })
+    ).toThrow();
+  });
+
+  it("maps a batch_task_import wire object into an array of tasks", () => {
+    const result = toAgentCommandResult({
+      kind: "batch_task_import",
+      answer: null,
+      citedSources: null,
+      tool: null,
+      projectNameHint: "Orextic Website",
+      title: null,
+      priority: null,
+      dueDate: null,
+      question: null,
+      tasks: [
+        { title: "Design homepage", priority: "high", dueDate: null },
+        { title: "Write copy", priority: null, dueDate: "2026-09-10" },
+      ],
+    });
+    expect(result).toEqual({
+      kind: "batch_task_import",
+      projectNameHint: "Orextic Website",
+      tasks: [
+        { title: "Design homepage", priority: "high", dueDate: undefined },
+        { title: "Write copy", priority: undefined, dueDate: "2026-09-10" },
+      ],
+    });
+  });
+
+  it("SECURITY: rejects a batch of more than 50 tasks (no unlimited AI-created rows)", () => {
+    const tasks = Array.from({ length: 51 }, (_, i) => ({ title: `Task ${i}`, priority: null, dueDate: null }));
+    expect(() =>
+      toAgentCommandResult({
+        kind: "batch_task_import",
+        answer: null,
+        citedSources: null,
+        tool: null,
+        projectNameHint: "Orextic Website",
+        title: null,
+        priority: null,
+        dueDate: null,
+        question: null,
+        tasks,
+      })
+    ).toThrow();
+  });
+
+  it("throws when batch_task_import has zero tasks", () => {
+    expect(() =>
+      toAgentCommandResult({
+        kind: "batch_task_import",
+        answer: null,
+        citedSources: null,
+        tool: null,
+        projectNameHint: "Orextic Website",
+        title: null,
+        priority: null,
+        dueDate: null,
+        question: null,
+        tasks: [],
       })
     ).toThrow();
   });

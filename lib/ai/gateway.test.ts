@@ -201,6 +201,30 @@ describe("requestAI", () => {
     expect(routeAndCall).toHaveBeenCalledTimes(2); // one retry, then stop
   });
 
+  it("REGRESSION (production failure): finishReason=length is reported as OUTPUT_TRUNCATED, never retried, and never as a generic 'unexpected response' -- e.g. a large pasted checklist that ran out of output tokens", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    hasPermission.mockResolvedValue(true);
+    const schema = (await import("zod")).z.object({ ok: (await import("zod")).z.literal(true) });
+    routeAndCall.mockResolvedValue({
+      content: '{"ok": true, "incomplete_because_trunc', // truncated mid-JSON
+      requestedModel: "openai/gpt-5-mini",
+      actualModel: "openai/gpt-5-mini",
+      provider: "openai",
+      inputTokens: 500,
+      outputTokens: 4096,
+      totalTokens: 4596,
+      cost: 0.01,
+      toolCalls: [],
+      finishReason: "length",
+      refusal: null,
+    });
+
+    await expect(requestAI({ ...baseParams, schema, schemaName: "ok_schema" })).rejects.toMatchObject({
+      code: "OUTPUT_TRUNCATED",
+    });
+    expect(routeAndCall).toHaveBeenCalledTimes(1); // not retried -- the same oversized request would truncate again
+  });
+
   it("records a TASK_SENSITIVITY_REJECTED failure with no request content in the usage row", async () => {
     requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
     hasPermission.mockResolvedValue(true);

@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/database/server";
 import { PERMISSIONS } from "@/lib/permissions";
-import { createTask } from "@/app/actions/project-tasks";
-import { createTaskSchema } from "@/lib/validation/projects";
+import { createTask, createTasksBatch } from "@/app/actions/project-tasks";
+import { createTaskSchema, createTasksBatchSchema } from "@/lib/validation/projects";
 import { projectsSearchInputSchema } from "./schemas";
 import type { ToolDefinition } from "./types";
 
@@ -77,7 +77,33 @@ const projectsTaskCreate: ToolDefinition<
   },
 };
 
+/**
+ * LEVEL 1 (safe update). Same trust model as projectsTaskCreate -- the
+ * handler is the real createTasksBatch action verbatim, never a
+ * reimplementation. Same risk level as a single task create: creating N
+ * pre-approved tasks the founder has already reviewed in the proposal card
+ * is not riskier per-item than creating one, and the batch size itself is
+ * hard-capped in the input schema (MAX_BATCH_TASK_COUNT), not here.
+ */
+const projectsTasksCreateBatch: ToolDefinition<
+  import("zod").infer<typeof createTasksBatchSchema>,
+  { taskIds: string[]; count: number }
+> = {
+  name: "projects.tasks.create_batch",
+  description:
+    "Create multiple tasks on a project in one operation (checklist/batch import), up to 50 tasks per batch.",
+  domain: "projects",
+  requiredPermission: PERMISSIONS.PROJECTS_UPDATE,
+  scopeType: "project",
+  riskLevel: 1,
+  inputSchema: createTasksBatchSchema,
+  async handler(input) {
+    return createTasksBatch(input);
+  },
+};
+
 export const projectsTools = {
   [projectsSearch.name]: projectsSearch,
   [projectsTaskCreate.name]: projectsTaskCreate,
+  [projectsTasksCreateBatch.name]: projectsTasksCreateBatch,
 };

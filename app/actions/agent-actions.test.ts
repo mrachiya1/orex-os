@@ -154,6 +154,78 @@ describe("runCompanyBrainCommand", () => {
     expect(executeTool).toHaveBeenCalledTimes(1); // never attempted the mutation
   });
 
+  it("REGRESSION (production failure): a pasted checklist classified as batch_task_import resolves the project once and proposes a single batch tool call, not one call per task", async () => {
+    requestAI.mockResolvedValue({
+      data: {
+        kind: "batch_task_import",
+        projectNameHint: "Orextic Website",
+        tasks: [
+          { title: "Design homepage" },
+          { title: "Write copy", priority: "high" },
+          { title: "QA pass", dueDate: "2026-09-10" },
+        ],
+      },
+    });
+    executeTool.mockImplementation((toolName: string) => {
+      if (toolName === "projects.search") {
+        return Promise.resolve({ ok: true, status: "executed", output: [{ id: "proj-1", name: "Orextic Website" }] });
+      }
+      return Promise.resolve({ ok: true, status: "pending_approval", requestId: "req-batch-1" });
+    });
+
+    const result = await runCompanyBrainCommand({
+      organisationId,
+      companyId,
+      question: "- Design homepage\n- Write copy\n- QA pass\n\nAdd this task to my system",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.kind === "action_proposed") {
+      expect(result.toolName).toBe("projects.tasks.create_batch");
+      expect(result.summary).toContain("3 tasks");
+      expect(result.summary).toContain("Orextic Website");
+      expect(result.requestId).toBe("req-batch-1");
+    } else {
+      throw new Error("expected an action_proposed batch result");
+    }
+    // Exactly 2 calls total: one to resolve the project, one to propose the
+    // WHOLE batch -- never one OpenRouter/tool call per task.
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(executeTool).toHaveBeenNthCalledWith(
+      2,
+      "projects.tasks.create_batch",
+      expect.objectContaining({
+        projectId: "proj-1",
+        tasks: [
+          { title: "Design homepage", priority: "normal", dueDate: undefined },
+          { title: "Write copy", priority: "high", dueDate: undefined },
+          { title: "QA pass", priority: "normal", dueDate: "2026-09-10" },
+        ],
+      }),
+      "advisor"
+    );
+  });
+
+  it("asks for clarification for a batch import when the project is ambiguous, without creating anything", async () => {
+    requestAI.mockResolvedValue({
+      data: { kind: "batch_task_import", projectNameHint: "Website", tasks: [{ title: "a" }, { title: "b" }] },
+    });
+    executeTool.mockResolvedValue({
+      ok: true,
+      status: "executed",
+      output: [
+        { id: "p1", name: "Website Relaunch A" },
+        { id: "p2", name: "Website Relaunch B" },
+      ],
+    });
+
+    const result = await runCompanyBrainCommand({ organisationId, companyId, question: "checklist for Website" });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.kind).toBe("needs_clarification");
+    expect(executeTool).toHaveBeenCalledTimes(1); // never attempted the batch mutation
+  });
+
   it("never throws when the AI call itself fails", async () => {
     requestAI.mockRejectedValue(new Error("provider unavailable"));
     const result = await runCompanyBrainCommand({ organisationId, companyId, question: "What do we do?" });

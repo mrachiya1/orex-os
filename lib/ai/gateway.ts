@@ -148,6 +148,15 @@ export async function requestAI<T = string>(params: RequestAIParams<T>): Promise
       if (callResult.content.trim().length === 0) {
         throw new AIGatewayError("EMPTY_RESPONSE", "The AI returned an empty response.");
       }
+      // A truncated structured-output response (the model ran out of output
+      // tokens mid-JSON, e.g. trying to enumerate every item in a large
+      // pasted checklist) will always fail JSON.parse/schema validation --
+      // check finishReason first so that failure is reported as truncation,
+      // not misdiagnosed as generic malformed/invalid output. Not retried:
+      // resending the identical oversized request would truncate again.
+      if (callResult.finishReason === "length") {
+        throw new AIGatewayError("OUTPUT_TRUNCATED", "The response was too large to complete in one pass.");
+      }
       return validateStructuredOutput(callResult.content, params.schema);
     }
 

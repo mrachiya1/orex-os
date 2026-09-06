@@ -107,6 +107,25 @@ export const createTaskSchema = z.object({
   dueDate: z.string().optional(),
 });
 
+/** Hard ceiling on a single approved batch (prompt: batch task import) -- never unlimited AI-created rows. More than this must be split into multiple reviewed batches. */
+export const MAX_BATCH_TASK_COUNT = 50;
+
+export const createTasksBatchSchema = z.object({
+  projectId: z.string().uuid(),
+  tasks: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().optional(),
+        milestoneId: z.string().uuid().optional(),
+        priority: z.enum(priorityValues).default("normal"),
+        dueDate: z.string().optional(),
+      })
+    )
+    .min(1)
+    .max(MAX_BATCH_TASK_COUNT),
+});
+
 export const updateTaskSchema = z.object({
   taskId: z.string().uuid(),
   projectId: z.string().uuid(),

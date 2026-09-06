@@ -5,7 +5,7 @@ import { requireProjectAccess, PERMISSIONS } from "@/lib/permissions";
 import { writeAuditLog } from "@/lib/audit";
 import { writeProjectActivity } from "@/lib/projects/activity";
 import { createServerSupabaseClient } from "@/lib/database/server";
-import { createTaskSchema, updateTaskSchema, updateTaskStatusSchema } from "@/lib/validation/projects";
+import { createTaskSchema, createTasksBatchSchema, updateTaskSchema, updateTaskStatusSchema } from "@/lib/validation/projects";
 
 async function getProjectScope(projectId: string) {
   const supabase = await createServerSupabaseClient();
@@ -59,6 +59,61 @@ export async function createTask(input: unknown) {
   });
 
   return { taskId: task.id };
+}
+
+/**
+ * Batch checklist/task import (prompt: production failure fix -- "add this
+ * task to my system" with a large pasted checklist). One deterministic
+ * multi-row INSERT, not a loop of single creates and never one OpenRouter
+ * call per task -- Postgres's own single-statement atomicity means this
+ * either creates every row or none (a constraint violation on any row
+ * rolls the whole statement back), satisfying "nothing should mutate on
+ * partial failure" without needing an explicit transaction wrapper.
+ * Permission/project-access is checked exactly once for the whole batch,
+ * identical to createTask's own check -- never per-item.
+ */
+export async function createTasksBatch(input: unknown) {
+  const parsed = createTasksBatchSchema.parse(input);
+  const user = await requireCurrentUser();
+  await requireProjectAccess(parsed.projectId, PERMISSIONS.PROJECTS_UPDATE);
+  const scope = await getProjectScope(parsed.projectId);
+
+  const supabase = await createServerSupabaseClient();
+  const { data: tasks, error } = await supabase
+    .from("project_tasks")
+    .insert(
+      parsed.tasks.map((t) => ({
+        project_id: parsed.projectId,
+        milestone_id: t.milestoneId ?? null,
+        title: t.title,
+        description: t.description ?? null,
+        priority: t.priority,
+        due_date: t.dueDate ?? null,
+        created_by: user.id,
+      }))
+    )
+    .select("id");
+  if (error) throw new Error(error.message);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    organisationId: scope.organisation_id,
+    companyId: scope.company_id,
+    resourceType: "project_tasks",
+    resourceId: parsed.projectId,
+    action: "task.batch_created",
+    // Titles/count only -- never the original pasted checklist text or raw
+    // model output in the audit trail.
+    afterState: { count: parsed.tasks.length, titles: parsed.tasks.map((t) => t.title) },
+  });
+  await writeProjectActivity({
+    projectId: parsed.projectId,
+    actorUserId: user.id,
+    eventType: "task.created",
+    summary: `${parsed.tasks.length} task${parsed.tasks.length === 1 ? "" : "s"} imported`,
+  });
+
+  return { taskIds: (tasks ?? []).map((t) => t.id), count: tasks?.length ?? 0 };
 }
 
 /**

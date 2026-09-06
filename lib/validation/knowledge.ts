@@ -55,5 +55,10 @@ export const extractCandidatesSchema = z.object({
 export const askCompanyBrainSchema = z.object({
   organisationId: z.string().uuid(),
   companyId: z.string().uuid().nullable(),
-  question: z.string().min(1).max(2000),
+  // Raised from 2000 (prompt: production failure fix) -- a pasted checklist
+  // legitimately exceeds a short question length. sendMessageSchema
+  // (app/actions/messages.ts) is kept at the same ceiling so a message that
+  // reaches this function never fails here for a reason the composer
+  // didn't already reject up front.
+  question: z.string().min(1).max(8000),
 });

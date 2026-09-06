@@ -11,7 +11,12 @@ import type { ActionResult } from "@/lib/actions/result";
 
 const sendMessageSchema = z.object({
   sessionId: z.string().uuid(),
-  content: z.string().min(1).max(4000),
+  // Matches askCompanyBrainSchema's ceiling (lib/validation/knowledge.ts) --
+  // a message that passes here must not then fail there for the same
+  // reason, which previously surfaced as "The AI provider returned an
+  // unexpected response." for a pasted checklist (a client-side length
+  // mismatch mislabeled as a provider failure).
+  content: z.string().min(1).max(8000),
 });
 
 /**

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Normalized AI gateway error taxonomy. Every failure mode the gateway can
  * produce is one of these -- never a raw provider error, never containing
@@ -10,6 +12,9 @@ export type AIErrorCode =
   | "MODEL_UNAVAILABLE"
   | "TIMEOUT"
   | "RATE_LIMITED"
+  | "AUTH_ERROR"
+  | "PAYLOAD_TOO_LARGE"
+  | "OUTPUT_TRUNCATED"
   | "INVALID_PROVIDER_RESPONSE"
   | "INVALID_STRUCTURED_OUTPUT"
   | "EMPTY_RESPONSE"
@@ -20,7 +25,9 @@ export type AIErrorCode =
   | "PRIVACY_POLICY_REJECTED"
   | "FALLBACK_EXHAUSTED"
   | "UNKNOWN_TASK_ALIAS"
-  | "TASK_SENSITIVITY_REJECTED";
+  | "TASK_SENSITIVITY_REJECTED"
+  /** A client-side input validation failure (e.g. a Zod schema reject) -- NOT a provider/AI failure. Distinguished so it never gets mislabeled as "the AI provider returned an unexpected response." (the actual production bug this fixes). */
+  | "INVALID_INPUT";
 
 /** Thrown internally by lib/ai/router.ts's timeout wrapper; classified below. */
 export class AITimeoutSignal extends Error {
@@ -89,6 +96,12 @@ export function classifyProviderError(err: unknown): AIGatewayError {
   }
   if (name === "ConnectionError" || name === "RequestAbortedError") {
     return new AIGatewayError("OPENROUTER_UNAVAILABLE", "Could not reach the AI provider.");
+  }
+  if (name === "UnauthorizedResponseError" || name === "ForbiddenResponseError" || status === 401 || status === 403) {
+    return new AIGatewayError("AUTH_ERROR", "The AI provider rejected the request credentials.");
+  }
+  if (name === "PayloadTooLargeResponseError" || status === 413) {
+    return new AIGatewayError("PAYLOAD_TOO_LARGE", "That request is too large for the AI provider to process.");
   }
 
   return new AIGatewayError("INVALID_PROVIDER_RESPONSE", "The AI provider returned an unexpected response.");
@@ -178,7 +191,20 @@ export function logStructuredOutputFailure(context: {
  */
 const GENERIC_RETRY_MESSAGE = "Company Brain couldn't complete that request. Please try again.";
 
+/**
+ * A message too long for Company Brain's own input schema (askCompanyBrainSchema
+ * / sendMessageSchema) previously reached classifyProviderError's fallback
+ * and was shown to the user as "The AI provider returned an unexpected
+ * response." -- a real production bug (a pasted checklist over the length
+ * limit never even reached OpenRouter, yet the error blamed "the AI
+ * provider"). A ZodError is a client-side input-validation failure, never
+ * a provider/AI failure, and must be classified before anything provider-
+ * related is even considered.
+ */
 export function toSafeAIErrorMessage(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    return "That request isn't valid. Please check your input and try again.";
+  }
   if (err instanceof AIGatewayError) {
     // These codes describe an internal shape/parsing detail ("the model's
     // response was not valid JSON") that means nothing to an end user and
@@ -187,6 +213,9 @@ export function toSafeAIErrorMessage(err: unknown): string {
     // console.error server-side.
     if (err.code === "INVALID_STRUCTURED_OUTPUT" || err.code === "EMPTY_RESPONSE" || err.code === "MODEL_REFUSAL") {
       return GENERIC_RETRY_MESSAGE;
+    }
+    if (err.code === "OUTPUT_TRUNCATED") {
+      return "The checklist is too large to process in one pass. Nothing was changed.";
     }
     return err.message;
   }
