@@ -25,12 +25,12 @@ export function AskCompanyBrainBox({
     setError(null);
     setAnswer(null);
     startTransition(async () => {
-      try {
-        const res = await askCompanyBrain({ organisationId, companyId, question });
-        setAnswer(res);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to get an answer");
+      const res = await askCompanyBrain({ organisationId, companyId, question });
+      if (!res.ok) {
+        setError(res.error);
+        return;
       }
+      setAnswer(res);
     });
   }
 

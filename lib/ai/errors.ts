@@ -91,3 +91,28 @@ export function classifyProviderError(err: unknown): AIGatewayError {
 
   return new AIGatewayError("INVALID_PROVIDER_RESPONSE", "The AI provider returned an unexpected response.");
 }
+
+/**
+ * The one adapter every AI-calling Server Action should use at its
+ * outermost catch, so no raw error (including a config-check throw like
+ * "OPENROUTER_API_KEY is not configured" from client.ts/embeddings.ts,
+ * which bypasses classifyProviderError entirely by throwing before their
+ * own try block) ever crosses the "use server" boundary -- see
+ * lib/actions/result.ts for why that specifically breaks in production
+ * (Next.js redacts thrown Server Action error messages into a generic
+ * digest, "Minified React error #441").
+ *
+ * A permission-denial `Error("Forbidden: ...")` (the convention used by
+ * lib/permissions/index.ts and this action's own explicit checks) gets its
+ * own message rather than being misclassified as a provider failure.
+ * Anything else -- a genuinely unexpected error -- goes through
+ * classifyProviderError's safe fallback, which never leaks the original
+ * message.
+ */
+export function toSafeAIErrorMessage(err: unknown): string {
+  if (err instanceof AIGatewayError) return err.message;
+  if (err instanceof Error && err.message.startsWith("Forbidden")) {
+    return "You don't have permission to do that.";
+  }
+  return classifyProviderError(err).message;
+}
