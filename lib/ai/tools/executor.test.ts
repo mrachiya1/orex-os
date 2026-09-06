@@ -24,7 +24,7 @@ vi.mock("@/app/actions/project-tasks", () => ({ createTask: (...a: unknown[]) =>
 // lib/ai/tools/approval.ts.
 function mockChain(result: { data: unknown; error: { message: string } | null }) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "insert", "update", "or", "neq", "order", "limit"]) {
+  for (const m of ["select", "eq", "insert", "update", "or", "neq", "order", "limit", "gte"]) {
     chain[m] = () => chain;
   }
   chain.maybeSingle = () => Promise.resolve(result);
@@ -49,10 +49,27 @@ const projectId = "11111111-1111-4111-8111-111111111111";
 const organisationId = "22222222-2222-4222-8222-222222222222";
 const companyId = "33333333-3333-4333-8333-333333333333";
 
+const advisorAgentRow = {
+  id: "agent-advisor-1",
+  agent_key: "advisor",
+  name: "Company Brain Advisor",
+  description: "Answers questions and performs simple, confirmed project actions on the user's behalf.",
+  organisation_id: organisationId,
+  company_id: null,
+  enabled: true,
+  mode: "MANUAL",
+  autonomy_mode: "CONFIRM_TO_ACT",
+  allowed_tools: ["projects.search", "projects.task.create"],
+  max_risk_level: 1,
+  default_model_alias: "agent.tools",
+  disable_after_current_run: false,
+};
+
 describe("executeTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fromResponses = {
+      agents: { data: advisorAgentRow, error: null },
       projects: { data: { organisation_id: organisationId, company_id: companyId }, error: null },
       ai_action_requests: { data: { id: "req-1" }, error: null },
     };
@@ -112,6 +129,61 @@ describe("executeTool", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
+  it("refuses when the agent is disabled, without calling the tool handler", async () => {
+    fromResponses.agents = { data: { ...advisorAgentRow, enabled: false }, error: null };
+    hasPermission.mockResolvedValue(true);
+    fromResponses.companies = { data: { organisation_id: organisationId }, error: null };
+    const result = await executeTool("projects.search", { companyId, query: "Test" }, "advisor");
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses when the agent's mode is OFF, even though enabled is true", async () => {
+    fromResponses.agents = { data: { ...advisorAgentRow, mode: "OFF" }, error: null };
+    hasPermission.mockResolvedValue(true);
+    fromResponses.companies = { data: { organisation_id: organisationId }, error: null };
+    const result = await executeTool("projects.search", { companyId, query: "Test" }, "advisor");
+    expect(result.ok).toBe(false);
+  });
+
+  it("re-enabling a previously-disabled agent restores normal operation", async () => {
+    fromResponses.agents = { data: { ...advisorAgentRow, enabled: true, mode: "MANUAL" }, error: null };
+    hasPermission.mockResolvedValue(true);
+    fromResponses.companies = { data: { organisation_id: organisationId }, error: null };
+    fromResponses.projects = { data: [], error: null };
+    const result = await executeTool("projects.search", { companyId, query: "Test" }, "advisor");
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a SCHEDULED-mode agent invoked manually (no scheduler exists yet)", async () => {
+    fromResponses.agents = { data: { ...advisorAgentRow, mode: "SCHEDULED" }, error: null };
+    const result = await executeTool("projects.search", { companyId, query: "Test" }, "advisor");
+    expect(result.ok).toBe(false);
+  });
+
+  it("global pause for the invocation's company blocks execution even though the agent itself is enabled", async () => {
+    hasProjectAccess.mockResolvedValue(true);
+    fromResponses.global_ai_controls = {
+      data: { paused: true, background_agents_enabled: true, scheduled_agents_enabled: true, auto_safe_actions_enabled: true },
+      error: null,
+    };
+    const result = await executeTool(
+      "projects.task.create",
+      { projectId, title: "x", priority: "normal" },
+      "advisor"
+    );
+    expect(result.ok).toBe(false);
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it("stops a new run once the agent's daily budget is exhausted", async () => {
+    hasPermission.mockResolvedValue(true);
+    fromResponses.companies = { data: { organisation_id: organisationId }, error: null };
+    fromResponses.agent_budgets = { data: { daily_budget_usd: 1, monthly_budget_usd: null, max_daily_runs: null, max_context_tokens: null }, error: null };
+    fromResponses.ai_usage_events = { data: [{ estimated_cost: 5 }], error: null };
+    const result = await executeTool("projects.search", { companyId, query: "Test" }, "advisor");
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects a tool whose risk level exceeds the agent's maxRiskLevel", async () => {
     // projects.task.create is risk 1; the "advisor" agent's maxRiskLevel is 1,
     // so this simulates a hypothetical stricter agent by asking for an
@@ -139,6 +211,7 @@ describe("approveActionRequest", () => {
 
   it("executes the real tool handler on approval, and marks the request executed", async () => {
     fromResponses = {
+      agents: { data: advisorAgentRow, error: null },
       ai_action_requests: {
         data: {
           id: "req-1",
@@ -166,6 +239,7 @@ describe("approveActionRequest", () => {
 
   it("never executes when the approver lacks the required permission, even if the proposal exists", async () => {
     fromResponses = {
+      agents: { data: advisorAgentRow, error: null },
       ai_action_requests: {
         data: {
           id: "req-1",

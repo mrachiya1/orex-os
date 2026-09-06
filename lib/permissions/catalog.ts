@@ -73,6 +73,12 @@ export const PERMISSIONS = {
   SCOPE_CHANGES_READ: "scope_changes.read",
   SCOPE_CHANGES_CREATE: "scope_changes.create",
   SCOPE_CHANGES_APPROVE: "scope_changes.approve",
+
+  AGENTS_READ: "agents.read",
+  AGENTS_USE: "agents.use",
+  AGENTS_MANAGE: "agents.manage",
+  AGENTS_ENABLE: "agents.enable",
+  AGENTS_APPROVE: "agents.approve",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

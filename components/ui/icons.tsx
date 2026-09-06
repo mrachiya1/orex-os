@@ -104,3 +104,12 @@ export const IconDownload = (p: SVGProps<SVGSVGElement>) => (
 export const IconUpload = (p: SVGProps<SVGSVGElement>) => (
   <Base {...p}><path d="M12 21V9M7 14l5-5 5 5" /><path d="M4 19h16" /></Base>
 );
+export const IconAgents = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6" /></Base>
+);
+export const IconControlRoom = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><rect x="3" y="4" width="18" height="12" rx="1.5" /><path d="M8 20h8M12 16v4" /></Base>
+);
+export const IconSessions = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M4 6h16M4 12h16M4 18h10" /></Base>
+);

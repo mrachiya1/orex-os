@@ -24,6 +24,9 @@ import {
   IconTeams,
   IconSettings,
   IconSearch,
+  IconAgents,
+  IconSessions,
+  IconControlRoom,
 } from "@/components/ui/icons";
 
 interface NavItem {
@@ -60,6 +63,10 @@ function buildNav(slug: string, hasGroupAccess: boolean, canViewTeam: boolean): 
     {
       label: "Intelligence",
       items: [
+        { label: "Chat", href: `/${slug}/intelligence/chat`, icon: IconAdvisor },
+        { label: "Agents", href: `/${slug}/intelligence/agents`, icon: IconAgents },
+        { label: "Sessions", href: `/${slug}/intelligence/sessions`, icon: IconSessions },
+        { label: "Control Room", href: `/${slug}/intelligence/control-room`, icon: IconControlRoom },
         { label: "Company Brain", href: `/${slug}/brain`, icon: IconBrain },
         { label: "Decisions", href: `/${slug}/brain/decisions`, icon: IconDecisions },
         { label: "Opportunities", icon: IconOpportunities },

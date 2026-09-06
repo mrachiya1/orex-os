@@ -15,6 +15,9 @@ export interface RequestAIParams<T> {
   alias: string;
   companyId: string;
   organisationId?: string | null;
+  /** agents.id (uuid) -- when set, attributes this call's ai_usage_events row to a configured agent for Control Room cost rollups (prompts/014-orex-intelligence.md). Never a second accounting table. */
+  agentId?: string | null;
+  agentRunId?: string | null;
   systemPrompt: string;
   userPrompt: string;
   context: BuildContextParams;
@@ -198,6 +201,8 @@ export async function requestAI<T = string>(params: RequestAIParams<T>): Promise
       actorUserId: user.id,
       organisationId: params.organisationId ?? null,
       companyId: params.companyId,
+      agentId: params.agentId ?? null,
+      agentRunId: params.agentRunId ?? null,
       taskAlias: aliasForUsage,
       requestedModel,
       actualModel,

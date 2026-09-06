@@ -3,6 +3,8 @@ import { hasPermission, hasOrgPermission, hasProjectAccess } from "@/lib/permiss
 import { createServerSupabaseClient } from "@/lib/database/server";
 import { toSafeAIErrorMessage } from "@/lib/ai/errors";
 import { getAgent } from "@/lib/ai/agents/registry";
+import { checkBudgetRemaining } from "@/lib/ai/agents/budgets";
+import { getGlobalAIControls } from "@/lib/ai/agents/global-controls";
 import { getTool } from "./registry";
 import { authorizeToolCall, ToolAuthorizationError } from "./authorization";
 import { isExecutionAllowed } from "./risk";
@@ -57,8 +59,22 @@ export async function executeTool(
     const tool = getTool(toolName);
     if (!tool) return { ok: false, error: "Unknown tool." };
 
-    const agent = getAgent(agentId);
+    const agent = await getAgent(agentId);
     if (!agent) return { ok: false, error: "Unknown agent." };
+    // A disabled agent (or one whose mode is OFF) cannot run manually,
+    // on a schedule, from an event, or from the orchestrator -- there is
+    // no code path that skips this check (prompts/014-orex-intelligence.md
+    // "DISABLED AGENT SECURITY"). Re-enabling restores normal operation
+    // immediately; disabling never touches history, only future runs.
+    if (!agent.enabled || agent.mode === "OFF") {
+      return { ok: false, error: "This agent is disabled." };
+    }
+    // Schedules/events aren't implemented yet -- every call into executeTool
+    // today is a manual (chat) invocation, so a SCHEDULED-mode agent has no
+    // valid caller yet and must fail closed rather than silently running.
+    if (agent.mode === "SCHEDULED") {
+      return { ok: false, error: "This agent only runs on its configured schedule." };
+    }
     if (!agent.allowedTools.includes(toolName)) {
       return { ok: false, error: "This agent is not allowed to use that tool." };
     }
@@ -75,6 +91,14 @@ export async function executeTool(
     await authorizeToolCall(tool, input);
 
     const scope = await resolveScopeIds(tool.scopeType, input);
+
+    if (scope.companyId) {
+      const controls = await getGlobalAIControls(scope.companyId);
+      if (controls.paused) return { ok: false, error: "AI is currently paused for this company." };
+    }
+
+    const budgetCheck = await checkBudgetRemaining(agent.id);
+    if (!budgetCheck.ok) return { ok: false, error: budgetCheck.reason };
 
     const decision = isExecutionAllowed(agent.autonomyMode, tool.riskLevel);
     if (decision === "refuse") {
@@ -155,6 +179,13 @@ export async function approveActionRequest(
 
     const tool = getTool(request.tool_name);
     if (!tool) return { ok: false, error: "Unknown tool." };
+
+    if (outcome === "approved") {
+      const agent = await getAgent(request.agent_id);
+      if (!agent || !agent.enabled || agent.mode === "OFF") {
+        return { ok: false, error: "This agent has been disabled since this action was proposed." };
+      }
+    }
 
     if (outcome === "rejected") {
       const changed = await decideActionRequest(requestId, approver.id, "rejected");

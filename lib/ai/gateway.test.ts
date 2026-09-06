@@ -218,6 +218,8 @@ describe("requestAI", () => {
         "actorUserId",
         "organisationId",
         "companyId",
+        "agentId",
+        "agentRunId",
         "taskAlias",
         "requestedModel",
         "actualModel",

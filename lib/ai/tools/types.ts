@@ -53,11 +53,23 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
  */
 export type AnyToolDefinition = ToolDefinition<never, unknown>;
 
+/** OFF/MANUAL/SCHEDULED/AUTO_SAFE -- when an agent may run at all (prompts/014-orex-intelligence.md). Orthogonal to AutonomyMode, which governs whether a given tool call executes or proposes once the agent is already allowed to run. */
+export type AgentRunMode = "OFF" | "MANUAL" | "SCHEDULED" | "AUTO_SAFE";
+
 export interface AgentDefinition {
+  /** DB primary key (agents.id) -- needed for budget/run-history lookups. */
+  id: string;
+  /** Stable string key used everywhere in application code (e.g. "advisor") -- what executeTool's agentId parameter is. */
   agentId: string;
   name: string;
   description: string;
+  organisationId: string;
+  companyId: string | null;
+  enabled: boolean;
+  mode: AgentRunMode;
   autonomyMode: AutonomyMode;
   allowedTools: readonly string[];
   maxRiskLevel: RiskLevel;
+  defaultModelAlias: string;
+  disableAfterCurrentRun: boolean;
 }

@@ -6,6 +6,10 @@ export interface UsageEventInput {
   actorUserId: string | null;
   organisationId?: string | null;
   companyId?: string | null;
+  /** agents.id (uuid), when this call was made on behalf of a configured agent -- powers Control Room cost rollups (prompts/014-orex-intelligence.md); never a second accounting table. */
+  agentId?: string | null;
+  /** agent_runs.id (uuid), when this call is part of a tracked run. */
+  agentRunId?: string | null;
   /** The requested alias string, even if unknown/invalid -- useful for debugging bad callers. */
   taskAlias: string;
   requestedModel: string | null;
@@ -35,6 +39,8 @@ export async function recordUsage(event: UsageEventInput): Promise<void> {
     actor_user_id: event.actorUserId,
     organisation_id: event.organisationId ?? null,
     company_id: event.companyId ?? null,
+    agent_id: event.agentId ?? null,
+    agent_run_id: event.agentRunId ?? null,
     task_alias: event.taskAlias,
     requested_model: event.requestedModel,
     actual_model: event.actualModel,
