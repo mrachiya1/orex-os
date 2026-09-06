@@ -3,7 +3,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import type { CreateEmbeddingsResponseBody } from "@openrouter/sdk/models/operations";
 import type { DataClassification } from "./redaction";
 import { buildProviderPreferences } from "./privacy";
-import { AIGatewayError, classifyProviderError, type AIErrorCode } from "./errors";
+import { AIGatewayError, classifyProviderError, logProviderError, type AIErrorCode } from "./errors";
 import { recordUsage } from "./usage";
 
 /**
@@ -154,7 +154,12 @@ export async function embedText(params: EmbedTextParams): Promise<EmbedTextResul
       dimension: embedding.length,
     };
   } catch (err) {
-    const classified = err instanceof AIGatewayError ? err : classifyProviderError(err);
+    if (err instanceof AIGatewayError) {
+      errorCode = err.code;
+      throw err;
+    }
+    logProviderError(err, { alias: taskAlias, requestedModel: requestedModel ?? "unknown" });
+    const classified = classifyProviderError(err);
     errorCode = classified.code;
     throw classified;
   } finally {

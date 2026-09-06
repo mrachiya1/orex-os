@@ -93,6 +93,35 @@ export function classifyProviderError(err: unknown): AIGatewayError {
 }
 
 /**
+ * The one place a raw OpenRouter provider error (chat completion or
+ * embeddings) is logged, before classifyProviderError discards the
+ * original detail for the client-facing message. Logs only safe metadata
+ * (HTTP status, the provider's own error code, the model/provider that was
+ * requested, a request id when the SDK exposes one, and which alias/call
+ * site this was) -- never the request/response body, never any prompt or
+ * completion content, never the API key.
+ */
+export function logProviderError(err: unknown, context: { alias: string; requestedModel: string }): void {
+  const record = err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const statusCode = record && typeof record.statusCode === "number" ? record.statusCode : null;
+  const providerError =
+    record?.error && typeof record.error === "object" ? (record.error as Record<string, unknown>) : null;
+  const providerErrorCode = providerError && "code" in providerError ? providerError.code : null;
+  const headers = record?.headers instanceof Headers ? record.headers : null;
+  const requestId = headers?.get("x-request-id") ?? null;
+
+  console.error("[ai] OpenRouter request failed", {
+    alias: context.alias,
+    requestedModel: context.requestedModel,
+    requestedProvider: context.requestedModel.includes("/") ? context.requestedModel.split("/")[0] : null,
+    httpStatus: statusCode,
+    providerErrorCode,
+    errorClass: err instanceof Error ? err.constructor.name : typeof err,
+    requestId,
+  });
+}
+
+/**
  * The one adapter every AI-calling Server Action should use at its
  * outermost catch, so no raw error (including a config-check throw like
  * "OPENROUTER_API_KEY is not configured" from client.ts/embeddings.ts,

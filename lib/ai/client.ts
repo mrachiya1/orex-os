@@ -37,12 +37,34 @@ export interface JsonSchemaResponseFormat {
   strict?: boolean;
 }
 
+/** A plain function-calling tool definition -- mirrors OpenRouter's own shape, kept minimal on purpose. */
+export interface ToolSpec {
+  name: string;
+  description?: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface SendChatCompletionParams {
   model: string;
   fallbackModels?: string[];
   messages: ChatMessage[];
   provider?: ProviderRoutingPreferences;
   jsonSchema?: JsonSchemaResponseFormat;
+  /**
+   * Native OpenRouter function-calling tools -- distinct from, and not
+   * currently used by, Orex OS's own AI Action Engine (lib/ai/tools/*),
+   * which deliberately routes tool selection through structured-output
+   * JSON schemas instead (see prompts/013-ai-action-engine.md "NO
+   * ARBITRARY SQL" / tool trust model). Exists so a task alias declaring
+   * `requiresTools: true` (lib/ai/model-registry.ts) can be exercised and
+   * verified against its configured model.
+   */
+  tools?: ToolSpec[];
+}
+
+export interface ToolCall {
+  name: string;
+  arguments: string;
 }
 
 export interface ChatCompletionResult {
@@ -53,6 +75,7 @@ export interface ChatCompletionResult {
   outputTokens: number | null;
   totalTokens: number | null;
   cost: number | null;
+  toolCalls: ToolCall[];
 }
 
 /**
@@ -98,6 +121,12 @@ export async function sendChatCompletion(
             },
           }
         : undefined,
+      tools: params.tools?.length
+        ? params.tools.map((tool) => ({
+            type: "function" as const,
+            function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+          }))
+        : undefined,
       stream: false as const,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,6 +134,9 @@ export async function sendChatCompletion(
 
   const choice = response.choices?.[0];
   const content = typeof choice?.message?.content === "string" ? choice.message.content : "";
+  const toolCalls: ToolCall[] = (choice?.message?.toolCalls ?? [])
+    .filter((call): call is typeof call & { function: { name: string; arguments: string } } => call.type === "function")
+    .map((call) => ({ name: call.function.name, arguments: call.function.arguments }));
 
   // OpenRouter model ids are namespaced "<provider>/<model>" (e.g.
   // "openai/gpt-5.4-mini"); the SDK's typed response has no simpler
@@ -121,5 +153,6 @@ export async function sendChatCompletion(
     outputTokens: response.usage?.completionTokens ?? null,
     totalTokens: response.usage?.totalTokens ?? null,
     cost: response.usage?.cost ?? null,
+    toolCalls,
   };
 }

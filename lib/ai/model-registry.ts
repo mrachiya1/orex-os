@@ -30,9 +30,15 @@ export interface ModelRouteConfig {
 }
 
 /**
- * Last-resort safety-net model, used only if an alias's own fallback chain
- * is exhausted AND the registry entry itself is somehow missing/misconfigured.
- * Repurposes the Phase 001-reserved OPENROUTER_DEFAULT_MODEL env var.
+ * Orex OS's configured default chat/reasoning model (OPENROUTER_DEFAULT_MODEL,
+ * currently openai/gpt-5-mini -- chosen for its cost/performance and support
+ * for structured output + tool calling, which the AI Action Engine
+ * requires). lib/ai/router.ts's routeAndCall uses this as the fallback for
+ * any alias whose own `fallbackModels` array is empty -- which today is
+ * every alias except finance.structured (which lists it explicitly instead,
+ * after its own cross-family Anthropic fallback). Never hard-code this
+ * model id in feature code -- read it through this function (or, for
+ * routing, simply leave an alias's fallbackModels empty).
  */
 export function getDefaultFallbackModel(): string | undefined {
   return process.env.OPENROUTER_DEFAULT_MODEL || undefined;
@@ -58,8 +64,12 @@ export const MODEL_REGISTRY: Record<TaskAlias, ModelRouteConfig> = {
     // Cross-family fallback (Anthropic) rather than a second OpenAI model,
     // so a single provider/family outage doesn't take out both attempts --
     // acceptable for this alias since claude-sonnet-4.6 also satisfies its
-    // structured-output requirement.
-    fallbackModels: ["anthropic/claude-sonnet-4.6"],
+    // structured-output requirement. openai/gpt-5-mini (OPENROUTER_DEFAULT_MODEL,
+    // see getDefaultFallbackModel doc comment) is appended as a final layer --
+    // an alias with its own non-empty fallbackModels never falls through to
+    // the default automatically (see routeAndCall), so this is listed
+    // explicitly rather than relying on that mechanism for this one alias.
+    fallbackModels: ["anthropic/claude-sonnet-4.6", "openai/gpt-5-mini"],
     requiresStructuredOutput: true,
     requiresTools: false,
     sensitivityAllowance: "restricted",

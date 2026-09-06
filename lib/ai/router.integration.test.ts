@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import { routeAndCall } from "./router";
+import { sendChatCompletion } from "./client";
+import { toJsonSchemaResponseFormat, validateStructuredOutput } from "./structured-output";
 
 /**
  * Real network integration test against OpenRouter -- run explicitly via
@@ -44,6 +47,91 @@ describe.skipIf(!hasKey)("routeAndCall (live OpenRouter integration)", () => {
     });
 
     expect(result.content.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Verifies the configured default chat/reasoning model (OPENROUTER_DEFAULT_MODEL,
+ * openai/gpt-5-mini) directly, independent of any one alias's primary model
+ * -- see lib/ai/model-registry.ts's getDefaultFallbackModel doc comment.
+ */
+describe.skipIf(!hasKey)("openai/gpt-5-mini (live OpenRouter integration)", () => {
+  it("1. answers a raw chat completion as the primary model", async () => {
+    const result = await sendChatCompletion({
+      model: "openai/gpt-5-mini",
+      messages: [
+        { role: "system", content: "Reply with exactly one word: pong." },
+        { role: "user", content: "ping" },
+      ],
+    });
+
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(result.actualModel).toContain("gpt-5-mini");
+  });
+
+  it("1b. also works when used only as the fallback behind a deliberately invalid primary model", async () => {
+    const result = await sendChatCompletion({
+      model: "openai/this-model-does-not-exist-xyz",
+      fallbackModels: ["openai/gpt-5-mini"],
+      messages: [
+        { role: "system", content: "Reply with exactly one word: pong." },
+        { role: "user", content: "ping" },
+      ],
+    });
+
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(result.actualModel).toContain("gpt-5-mini");
+  });
+
+  it("2. produces structured JSON output that validates against a real Zod schema", async () => {
+    const schema = z.object({
+      answer: z.string().min(1),
+      citedSources: z.array(z.object({ knowledgeItemId: z.string(), title: z.string() })),
+    });
+
+    const result = await routeAndCall({
+      alias: "advisor.deep",
+      messages: [
+        {
+          role: "system",
+          content:
+            'Respond ONLY with JSON matching this shape: {"answer": string, "citedSources": []}. ' +
+            'Set answer to exactly "ok" and citedSources to an empty array.',
+        },
+        { role: "user", content: "test" },
+      ],
+      classification: "public",
+      jsonSchema: toJsonSchemaResponseFormat("test_schema", schema),
+    });
+
+    const parsed = validateStructuredOutput(result.content, schema);
+    expect(parsed.answer).toBeTruthy();
+    expect(Array.isArray(parsed.citedSources)).toBe(true);
+  });
+
+  it("3. supports native OpenRouter tool calling", async () => {
+    const result = await sendChatCompletion({
+      model: "openai/gpt-5-mini",
+      messages: [
+        { role: "system", content: "You must call the get_weather tool for any location the user asks about." },
+        { role: "user", content: "What is the weather in Paris?" },
+      ],
+      tools: [
+        {
+          name: "get_weather",
+          description: "Get the current weather for a location",
+          parameters: {
+            type: "object",
+            properties: { location: { type: "string" } },
+            required: ["location"],
+          },
+        },
+      ],
+    });
+
+    expect(result.toolCalls.length).toBeGreaterThan(0);
+    expect(result.toolCalls[0].name).toBe("get_weather");
+    expect(() => JSON.parse(result.toolCalls[0].arguments)).not.toThrow();
   });
 });
 

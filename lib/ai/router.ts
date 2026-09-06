@@ -4,7 +4,7 @@ import { getModelRoute, getDefaultFallbackModel, type TaskAlias } from "./model-
 import { buildProviderPreferences } from "./privacy";
 import { assertClassificationAllowed } from "./sensitivity";
 import type { DataClassification } from "./redaction";
-import { AIGatewayError, AITimeoutSignal, classifyProviderError } from "./errors";
+import { AIGatewayError, AITimeoutSignal, classifyProviderError, logProviderError } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -78,6 +78,7 @@ export async function routeAndCall(params: RouteAndCallParams): Promise<RouteAnd
   } catch (err) {
     if (err instanceof AIGatewayError) throw err;
 
+    logProviderError(err, { alias: params.alias, requestedModel: route.primaryModel });
     const classified = classifyProviderError(err);
     // A provider/model-unavailable failure after OpenRouter already had a
     // fallback chain to try means the whole chain was exhausted.
