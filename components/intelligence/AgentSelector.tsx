@@ -8,6 +8,7 @@ export interface SelectableAgent {
   agentId: string;
   name: string;
   enabled: boolean;
+  description?: string;
 }
 
 /**

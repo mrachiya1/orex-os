@@ -38,7 +38,7 @@ export default async function ChatSessionPage({
       companyName={company.name}
       sessionId={sessionId}
       initialMessages={messages as never}
-      agents={agents.map((a) => ({ agentId: a.agentId, name: a.name, enabled: a.enabled }))}
+      agents={agents.map((a) => ({ agentId: a.agentId, name: a.name, enabled: a.enabled, description: a.description }))}
       contextSummary={contextSummary}
       historySessions={sessions as never}
       spendToday={controlRoomSummary.spendToday}

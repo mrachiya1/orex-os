@@ -51,7 +51,7 @@ export default async function IntelligencePage({
       companyName={company.name}
       sessionId={null}
       initialMessages={[]}
-      agents={agents.map((a) => ({ agentId: a.agentId, name: a.name, enabled: a.enabled }))}
+      agents={agents.map((a) => ({ agentId: a.agentId, name: a.name, enabled: a.enabled, description: a.description }))}
       contextSummary={contextSummary}
       historySessions={sessions as never}
       spendToday={controlRoomSummary.spendToday}

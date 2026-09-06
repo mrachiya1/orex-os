@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconClose, IconClock } from "@/components/ui/icons";
+import { IconClose, IconClock, IconSparkle } from "@/components/ui/icons";
 import { setAgentEnabled } from "@/app/actions/agents";
 import type { IntelligenceContextSummary } from "@/lib/intelligence/context";
 import type { RecentActivityRow } from "@/app/actions/agents";
@@ -105,9 +105,13 @@ export function ContextRail({
           const status = !a.enabled ? "Disabled" : isActive && isThinking ? "Working" : "Ready";
           const tone = !a.enabled ? "ox-pill-neutral" : status === "Working" ? "ox-pill-warning" : "ox-pill-success";
           return (
-            <div key={a.agentId} className="flex items-center justify-between rounded-[var(--radius-s)] px-2 py-1.5">
-              <div className="flex flex-col">
-                <span className="text-[12px] text-[var(--text-secondary)]">{a.name}</span>
+            <div key={a.agentId} className="flex items-center gap-2.5 rounded-[var(--radius-s)] px-2 py-2">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-s)] border border-[var(--border-medium)] bg-[var(--surface-raised)] text-[var(--text-secondary)]">
+                <IconSparkle width={12} height={12} />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[12px] font-medium text-[var(--text-primary)]">{a.name}</span>
+                {a.description && <span className="truncate text-[10.5px] text-[var(--text-muted)]">{a.description}</span>}
                 <span className={`ox-pill ${tone} mt-0.5 w-fit`}>{status}</span>
               </div>
               {canManageAgents ? (

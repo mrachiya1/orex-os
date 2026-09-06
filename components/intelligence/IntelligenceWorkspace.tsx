@@ -12,7 +12,7 @@ import { Composer, AttachmentChip, type PendingAttachment } from "./Composer";
 import { ActionProposalCard } from "./ActionProposalCard";
 import { ConversationHistoryDrawer, type HistorySessionRow } from "./ConversationHistoryDrawer";
 import { ContextRail } from "./ContextRail";
-import { IconHistory, IconSettings, IconSparkle } from "@/components/ui/icons";
+import { IconHistory, IconSettings, IconSparkle, IconProjects, IconBrain, IconDecisions } from "@/components/ui/icons";
 import type { IntelligenceContextSummary } from "@/lib/intelligence/context";
 import type { RecentActivityRow } from "@/app/actions/agents";
 
@@ -200,8 +200,8 @@ export function IntelligenceWorkspace({
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Hero -- same gradient/hero language as the Today dashboard, scaled down; chat stays the dominant element below it. */}
-        <section className="relative overflow-hidden border-b border-[var(--border-subtle)] px-6 py-5">
+        {/* Hero -- same gradient/hero language as the Today dashboard; chat stays the dominant element below it. */}
+        <section className="relative overflow-hidden border-b border-[var(--border-subtle)] px-8 py-7">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
@@ -216,12 +216,48 @@ export function IntelligenceWorkspace({
               Orex Super Brain
             </span>
           </div>
-          <h1 className="font-display relative mt-1.5 text-[24px] font-medium tracking-tight text-[var(--text-primary)]">
+          <h1 className="font-display relative mt-2 text-[28px] font-medium tracking-tight text-[var(--text-primary)]">
             Orex Intelligence
           </h1>
-          <p className="relative mt-0.5 text-[12.5px] text-[var(--text-secondary)]">
-            Ask, analyze, plan and operate Orex OS from one intelligence layer.
+          <p className="relative mt-1 max-w-lg text-[13px] text-[var(--text-secondary)]">
+            Ask, command, and manage the company from one intelligence layer.
           </p>
+
+          {/* Company Context strip -- every count here is real (permission-gated, `null` omitted rather than guessed). */}
+          <div className="relative mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[var(--radius-m)] border border-[var(--border-subtle)] bg-[var(--surface-1)]/60 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+              <span className="text-[12px] font-medium text-[var(--text-primary)]">{companyName}</span>
+              <span className="text-[10.5px] text-[var(--text-muted)]">Active</span>
+            </div>
+            {contextSummary.activeProjects !== null && (
+              <div className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+                <IconProjects width={13} height={13} className="text-[var(--text-muted)]" />
+                <span className="num">{contextSummary.activeProjects}</span>
+                <span className="text-[var(--text-muted)]">Active Projects</span>
+              </div>
+            )}
+            {contextSummary.knowledgeItems !== null && (
+              <div className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+                <IconBrain width={13} height={13} className="text-[var(--text-muted)]" />
+                <span className="num">{contextSummary.knowledgeItems}</span>
+                <span className="text-[var(--text-muted)]">Company Brain</span>
+              </div>
+            )}
+            {contextSummary.openDecisions !== null && (
+              <div className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+                <IconDecisions width={13} height={13} className="text-[var(--text-muted)]" />
+                <span className="num">{contextSummary.openDecisions}</span>
+                <span className="text-[var(--text-muted)]">Open Decisions</span>
+              </div>
+            )}
+            <Link
+              href={`/${companySlug}/brain`}
+              className="ox-focus-ring ml-auto text-[11.5px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              Manage sources →
+            </Link>
+          </div>
         </section>
 
         {/* Compact controls row */}
