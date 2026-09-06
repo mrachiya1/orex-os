@@ -8,6 +8,7 @@ import { listFolders } from "@/app/actions/project-folders";
 import { ProjectDatabase, type DbProjectRow } from "@/components/projects/database/ProjectDatabase";
 import { ProjectsInsights } from "@/components/projects/database/ProjectsInsights";
 import { ProjectsBottomPanels } from "@/components/projects/database/ProjectsBottomPanels";
+import { ImportProjectButton } from "@/components/projects/ImportProjectDialog";
 import { PageHeader, Card } from "@/components/ui/Surface";
 
 export default async function ProjectsPage({
@@ -132,7 +133,15 @@ export default async function ProjectsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4">
-      <PageHeader title="Projects" description="Plan, organize and deliver every company engagement." />
+      <PageHeader
+        title="Projects"
+        description="Plan, organize and deliver every company engagement."
+        action={
+          canCreate ? (
+            <ImportProjectButton companyId={company.id} organisationId={company.organisation_id} companySlug={companySlug} />
+          ) : undefined
+        }
+      />
       <div className="flex flex-col gap-4 px-8 pb-8 pt-6">
         <ProjectsInsights projects={projects} pendingRequestCount={pendingRequests.length} companySlug={companySlug} />
 

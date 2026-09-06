@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from "@/lib/database/server";
 import { hasProjectAccess, PERMISSIONS } from "@/lib/permissions";
 import { ProjectTabs } from "@/components/projects/ProjectTabs";
 import { StatusCell, PriorityCell, HealthCell, AssignedCell, ClientCell, CategoryCell, DateCell } from "@/components/projects/database/Cells";
+import { ExportProjectButton } from "@/components/projects/ExportProjectButton";
 import { IconProjects } from "@/components/ui/icons";
 
 export default async function ProjectDetailLayout({
@@ -54,12 +55,15 @@ export default async function ProjectDetailLayout({
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-8 py-3 text-[12px] text-[var(--text-muted)]">
-        <Link href={`/${companySlug}/projects`} className="ox-focus-ring hover:text-[var(--text-primary)]">
-          Projects
-        </Link>
-        <span>/</span>
-        <span className="text-[var(--text-secondary)]">{project.name}</span>
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-8 py-3 text-[12px] text-[var(--text-muted)]">
+        <div className="flex items-center gap-1.5">
+          <Link href={`/${companySlug}/projects`} className="ox-focus-ring hover:text-[var(--text-primary)]">
+            Projects
+          </Link>
+          <span>/</span>
+          <span className="text-[var(--text-secondary)]">{project.name}</span>
+        </div>
+        <ExportProjectButton projectId={project.id} />
       </div>
 
       <div className="border-b border-[var(--border-subtle)] px-8 py-6">

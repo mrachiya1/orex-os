@@ -98,3 +98,9 @@ export const IconClock = (p: SVGProps<SVGSVGElement>) => (
 export const IconAudit = (p: SVGProps<SVGSVGElement>) => (
   <Base {...p}><path d="M4 19V5a2 2 0 012-2h8l6 6v10a2 2 0 01-2 2H6a2 2 0 01-2-2z" /><path d="M14 3v6h6" /></Base>
 );
+export const IconDownload = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M12 3v12M7 10l5 5 5-5" /><path d="M4 19h16" /></Base>
+);
+export const IconUpload = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}><path d="M12 21V9M7 14l5-5 5 5" /><path d="M4 19h16" /></Base>
+);

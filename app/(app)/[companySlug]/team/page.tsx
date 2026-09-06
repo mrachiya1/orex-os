@@ -3,7 +3,9 @@ import Link from "next/link";
 import { getCompanyBySlug } from "@/lib/database/companies";
 import { createServerSupabaseClient } from "@/lib/database/server";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
+import { listInvitations } from "@/app/actions/team";
 import { MemberTable } from "@/components/team/MemberTable";
+import { InvitationsTable } from "@/components/team/InvitationsTable";
 import { InviteMemberButton } from "@/components/team/InviteMemberButton";
 import { PageHeader, Card, CardHeader } from "@/components/ui/Surface";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -34,7 +36,7 @@ export default async function TeamPage({
 
   const supabase = await createServerSupabaseClient();
 
-  const [{ data: members }, { data: roles }, canInvite, canRemove] = await Promise.all([
+  const [{ data: members }, { data: roles }, canInvite, canRemove, invitations] = await Promise.all([
     supabase
       .from("company_members")
       .select("id, user_id, status, joined_at, user_profiles(full_name, email), roles(label)")
@@ -43,6 +45,7 @@ export default async function TeamPage({
     supabase.from("roles").select("id, label").order("label"),
     hasPermission(company.id, PERMISSIONS.TEAM_INVITE),
     hasPermission(company.id, PERMISSIONS.TEAM_REMOVE),
+    listInvitations(company.id),
   ]);
 
   return (
@@ -69,6 +72,17 @@ export default async function TeamPage({
             canRemove={canRemove}
           />
         </Card>
+
+        <div className="mt-6">
+          <Card>
+            <CardHeader title="Invitations" />
+            <InvitationsTable
+              companyId={company.id}
+              invitations={(invitations ?? []) as never}
+              canInvite={canInvite}
+            />
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -408,6 +408,28 @@ export async function updateMemberPermissionOverrides(input: unknown) {
   });
 }
 
+/**
+ * Every invitation ever sent for a company, regardless of status -- "see
+ * all already invited people" means the full history (pending, accepted,
+ * revoked, expired), not just the ones still pending; the UI distinguishes
+ * status with a badge rather than the query hiding anything. Gated on
+ * team.read, matching the invitations_select RLS policy exactly (the same
+ * permission that already gates the Members table on this page).
+ */
+export async function listInvitations(companyId: string) {
+  await requireCurrentUser();
+  await requirePermission(companyId, PERMISSIONS.TEAM_READ);
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("invitations")
+    .select("id, email, status, expires_at, created_at, invited_by, roles(label)")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function listMyCompanies() {
   await requireCurrentUser();
   const supabase = await createServerSupabaseClient();
