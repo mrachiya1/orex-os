@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { SetNewPasswordForm } from "@/components/auth/SetNewPasswordForm";
+import { AuthErrorNotice } from "@/components/auth/AuthErrorNotice";
 
 /**
  * Reached only via /auth/callback exchanging a real Supabase recovery-link
@@ -18,6 +19,7 @@ export default async function ResetPasswordPage() {
         <h1 className="text-xl font-semibold tracking-tight">Set a new password</h1>
         {user?.email && <p className="text-sm text-[var(--muted)]">for {user.email}</p>}
       </div>
+      <AuthErrorNotice />
       {user ? (
         <SetNewPasswordForm />
       ) : (

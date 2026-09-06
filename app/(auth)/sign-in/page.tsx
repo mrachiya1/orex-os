@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { SignInForm } from "@/components/auth/SignInForm";
+import { AuthErrorNotice } from "@/components/auth/AuthErrorNotice";
 
 export default function SignInPage() {
   return (
@@ -7,11 +9,14 @@ export default function SignInPage() {
         <h1 className="text-xl font-semibold tracking-tight">Orex OS</h1>
         <p className="text-sm text-[var(--muted)]">Sign in to continue</p>
       </div>
+      <AuthErrorNotice />
       {/* Orex OS is a private company system: account creation is only ever
           reachable through a valid invitation (app/(auth)/accept-invite),
           never from this public page (AGENTS.md "Do NOT allow arbitrary
           public users to register"). */}
-      <SignInForm allowSignUp={false} />
+      <Suspense>
+        <SignInForm allowSignUp={false} />
+      </Suspense>
     </div>
   );
 }

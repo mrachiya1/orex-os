@@ -22,12 +22,24 @@ import { isSafeInternalPath } from "@/lib/config/app-url";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
+  const queryErrorCode = searchParams.get("error_code");
   const rawNext = searchParams.get("next") ?? "/";
   const next = isSafeInternalPath(rawNext) ? rawNext : "/";
 
+  // TEMPORARY diagnostic logging for the production recovery-link
+  // investigation (2026-09-06) -- never logs the code/token itself, only
+  // whether one was present and whether the exchange succeeded. Remove once
+  // the fresh recovery-link test confirms the fix.
+  if (queryErrorCode) {
+    console.error("[auth/callback] Supabase reported an error via query params", { errorCode: queryErrorCode, next });
+  }
+
   if (code) {
     const supabase = await createServerSupabaseClient();
-    await supabase.auth.exchangeCodeForSession(code);
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    console.log("[auth/callback]", { hasCode: true, exchangeOk: !error, errorCode: error?.code ?? null, next });
+  } else {
+    console.log("[auth/callback]", { hasCode: false, next });
   }
 
   return NextResponse.redirect(`${origin}${next}`);

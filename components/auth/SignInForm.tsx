@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithPassword, signInWithMagicLink, requestPasswordReset } from "@/app/actions/auth";
 
 type Mode = "password" | "magic-link";
@@ -26,12 +26,13 @@ export function SignInForm({
   onSignedIn?: () => void;
 } = {}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState(lockedEmail ?? "");
   const [password, setPassword] = useState("");
   const [result, setResult] = useState<Result>(null);
   const [isPending, startTransition] = useTransition();
-  const [showForgot, setShowForgot] = useState(false);
+  const [showForgot, setShowForgot] = useState(() => searchParams.get("showForgot") === "1");
   const [forgotSent, setForgotSent] = useState(false);
   const [isResetPending, startResetTransition] = useTransition();
 
