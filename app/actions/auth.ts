@@ -131,9 +131,17 @@ export async function signInWithMagicLink(input: unknown, redirectPath?: string)
 export async function requestPasswordReset(input: unknown): Promise<ActionResult> {
   const parsed = requestPasswordResetSchema.parse(input);
   const supabase = await createServerSupabaseClient();
-  await supabase.auth.resetPasswordForEmail(parsed.email, {
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.email, {
     redirectTo: buildCallbackUrl("/reset-password"),
   });
+  // A delivery/transport failure here (e.g. Supabase's shared email sender
+  // rate-limiting) is NOT an existence leak -- it happens the same way
+  // regardless of whether the address has an account -- so it's safe (and
+  // necessary for diagnosing "the email never arrived") to log it
+  // server-side. The client-facing message stays generic either way.
+  if (error) {
+    console.error("resetPasswordForEmail failed", { message: error.message, status: error.status });
+  }
   return { ok: true };
 }
 
