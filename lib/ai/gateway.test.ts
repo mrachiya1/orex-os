@@ -118,6 +118,89 @@ describe("requestAI", () => {
     });
   });
 
+  it("treats a model refusal as a distinct, non-retried failure", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    hasPermission.mockResolvedValue(true);
+    routeAndCall.mockResolvedValue({
+      content: "",
+      requestedModel: "openai/gpt-5-mini",
+      actualModel: "openai/gpt-5-mini",
+      provider: "openai",
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+      cost: 0,
+      toolCalls: [],
+      finishReason: "content_filter",
+      refusal: "I can't help with that.",
+    });
+
+    await expect(requestAI(baseParams)).rejects.toMatchObject({ code: "MODEL_REFUSAL" });
+    expect(routeAndCall).toHaveBeenCalledTimes(1); // never retried a refusal
+  });
+
+  it("retries exactly once on empty content when a schema is required, then succeeds", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    hasPermission.mockResolvedValue(true);
+    const schema = (await import("zod")).z.object({ ok: (await import("zod")).z.literal(true) });
+    routeAndCall
+      .mockResolvedValueOnce({
+        content: "",
+        requestedModel: "openai/gpt-5-mini",
+        actualModel: "openai/gpt-5-mini",
+        provider: "openai",
+        inputTokens: 1,
+        outputTokens: 0,
+        totalTokens: 1,
+        cost: 0,
+        toolCalls: [],
+        finishReason: "stop",
+        refusal: null,
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ ok: true }),
+        requestedModel: "openai/gpt-5-mini",
+        actualModel: "openai/gpt-5-mini",
+        provider: "openai",
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+        cost: 0,
+        toolCalls: [],
+        finishReason: "stop",
+        refusal: null,
+      });
+
+    const result = await requestAI({ ...baseParams, schema, schemaName: "ok_schema" });
+
+    expect(result.data).toEqual({ ok: true });
+    expect(routeAndCall).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries exactly once on malformed JSON, then gives up cleanly (never a third attempt)", async () => {
+    requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    hasPermission.mockResolvedValue(true);
+    const schema = (await import("zod")).z.object({ ok: (await import("zod")).z.literal(true) });
+    routeAndCall.mockResolvedValue({
+      content: "not json at all",
+      requestedModel: "openai/gpt-5-mini",
+      actualModel: "openai/gpt-5-mini",
+      provider: "openai",
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+      cost: 0,
+      toolCalls: [],
+      finishReason: "stop",
+      refusal: null,
+    });
+
+    await expect(requestAI({ ...baseParams, schema, schemaName: "ok_schema" })).rejects.toMatchObject({
+      code: "INVALID_STRUCTURED_OUTPUT",
+    });
+    expect(routeAndCall).toHaveBeenCalledTimes(2); // one retry, then stop
+  });
+
   it("records a TASK_SENSITIVITY_REJECTED failure with no request content in the usage row", async () => {
     requireCurrentUser.mockResolvedValue({ id: "user-1", email: "a@b.com" });
     hasPermission.mockResolvedValue(true);

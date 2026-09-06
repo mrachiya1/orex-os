@@ -56,7 +56,17 @@ export interface RouteAndCallResult extends ChatCompletionResult {
 export async function routeAndCall(params: RouteAndCallParams): Promise<RouteAndCallResult> {
   const route = getModelRoute(params.alias);
   assertClassificationAllowed(params.alias, route.sensitivityAllowance, params.classification);
-  const providerPrefs = buildProviderPreferences(params.classification);
+  const privacyPrefs = buildProviderPreferences(params.classification);
+  // A structured-output request must never be silently served by a provider
+  // that ignores response_format/json_schema -- merge require_parameters
+  // into whatever privacy routing the classification already produced
+  // (never drop dataCollection/zdr), rather than only setting it for
+  // confidential/restricted data as buildProviderPreferences does on its
+  // own (prompts/013-ai-action-engine.md follow-up: "REQUIRE PARAMETER
+  // SUPPORT").
+  const providerPrefs = params.jsonSchema
+    ? { ...privacyPrefs, requireParameters: true }
+    : privacyPrefs;
 
   const fallbackModels = route.fallbackModels.length > 0 ? route.fallbackModels : undefined;
   const defaultFallback = getDefaultFallbackModel();

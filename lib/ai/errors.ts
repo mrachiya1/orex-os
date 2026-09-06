@@ -12,6 +12,8 @@ export type AIErrorCode =
   | "RATE_LIMITED"
   | "INVALID_PROVIDER_RESPONSE"
   | "INVALID_STRUCTURED_OUTPUT"
+  | "EMPTY_RESPONSE"
+  | "MODEL_REFUSAL"
   | "CONTEXT_CONSTRUCTION_FAILED"
   | "PERMISSION_DENIED"
   | "COMPANY_RESOLUTION_FAILED"
@@ -122,6 +124,42 @@ export function logProviderError(err: unknown, context: { alias: string; request
 }
 
 /**
+ * Logged whenever a structured-output response fails to validate --
+ * malformed JSON, a refusal, empty content, or a schema mismatch. Never
+ * logs the raw prompt, the raw completion content, or the API key --
+ * `contentLength` (a count, not the text) is the closest this gets to the
+ * actual response. Distinct from logProviderError: this fires when the
+ * provider responded successfully at the HTTP level but the *content*
+ * wasn't usable, which logProviderError's raw-transport-error path never
+ * sees.
+ */
+export function logStructuredOutputFailure(context: {
+  alias: string;
+  schemaName: string;
+  requestedModel: string;
+  actualModel: string | null;
+  provider: string | null;
+  finishReason: string | null;
+  contentLength: number;
+  hadToolCalls: boolean;
+  hadRefusal: boolean;
+  requestId?: string | null;
+}): void {
+  console.error("[ai] Structured output validation failed", {
+    alias: context.alias,
+    schemaName: context.schemaName,
+    requestedModel: context.requestedModel,
+    actualModel: context.actualModel,
+    provider: context.provider,
+    finishReason: context.finishReason,
+    contentLength: context.contentLength,
+    hadToolCalls: context.hadToolCalls,
+    hadRefusal: context.hadRefusal,
+    requestId: context.requestId ?? null,
+  });
+}
+
+/**
  * The one adapter every AI-calling Server Action should use at its
  * outermost catch, so no raw error (including a config-check throw like
  * "OPENROUTER_API_KEY is not configured" from client.ts/embeddings.ts,
@@ -138,8 +176,20 @@ export function logProviderError(err: unknown, context: { alias: string; request
  * classifyProviderError's safe fallback, which never leaks the original
  * message.
  */
+const GENERIC_RETRY_MESSAGE = "Company Brain couldn't complete that request. Please try again.";
+
 export function toSafeAIErrorMessage(err: unknown): string {
-  if (err instanceof AIGatewayError) return err.message;
+  if (err instanceof AIGatewayError) {
+    // These codes describe an internal shape/parsing detail ("the model's
+    // response was not valid JSON") that means nothing to an end user and
+    // isn't actionable for them -- show the generic retry message instead,
+    // while the real detail still reaches logStructuredOutputFailure/
+    // console.error server-side.
+    if (err.code === "INVALID_STRUCTURED_OUTPUT" || err.code === "EMPTY_RESPONSE" || err.code === "MODEL_REFUSAL") {
+      return GENERIC_RETRY_MESSAGE;
+    }
+    return err.message;
+  }
   if (err instanceof Error && err.message.startsWith("Forbidden")) {
     return "You don't have permission to do that.";
   }

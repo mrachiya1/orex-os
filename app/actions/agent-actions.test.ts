@@ -38,6 +38,26 @@ describe("runCompanyBrainCommand", () => {
     retrieveKnowledge.mockResolvedValue([]);
   });
 
+  it("answers a bare greeting locally, without calling retrieval or the AI at all", async () => {
+    const result = await runCompanyBrainCommand({ organisationId, companyId, question: "Hi" });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.kind).toBe("answer");
+      if (result.kind === "answer") expect(result.answer).toMatch(/Company Brain is ready/i);
+    }
+    expect(retrieveKnowledge).not.toHaveBeenCalled();
+    expect(requestAI).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a message that merely starts with a greeting word as a bare greeting", async () => {
+    requestAI.mockResolvedValue({ data: { kind: "answer", answer: "Sure, here you go.", citedSources: [] } });
+
+    await runCompanyBrainCommand({ organisationId, companyId, question: "Hi, can you add a task to IRWAY?" });
+
+    expect(requestAI).toHaveBeenCalledTimes(1);
+  });
+
   it("returns an answer when the model classifies the message as a question", async () => {
     requestAI.mockResolvedValue({ data: { kind: "answer", answer: "We do X.", citedSources: [] } });
 
@@ -136,7 +156,7 @@ describe("runCompanyBrainCommand", () => {
 
   it("never throws when the AI call itself fails", async () => {
     requestAI.mockRejectedValue(new Error("provider unavailable"));
-    const result = await runCompanyBrainCommand({ organisationId, companyId, question: "hi" });
+    const result = await runCompanyBrainCommand({ organisationId, companyId, question: "What do we do?" });
     expect(result.ok).toBe(false);
   });
 });

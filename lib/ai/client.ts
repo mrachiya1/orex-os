@@ -76,6 +76,10 @@ export interface ChatCompletionResult {
   totalTokens: number | null;
   cost: number | null;
   toolCalls: ToolCall[];
+  /** "stop" | "tool_calls" | "length" | "content_filter" | "error" | null -- lets callers distinguish a genuinely empty/truncated response from a normal one before assuming `content` holds JSON. */
+  finishReason: string | null;
+  /** Set when the provider refused to answer (safety refusal) rather than erroring or returning content. */
+  refusal: string | null;
 }
 
 /**
@@ -137,6 +141,8 @@ export async function sendChatCompletion(
   const toolCalls: ToolCall[] = (choice?.message?.toolCalls ?? [])
     .filter((call): call is typeof call & { function: { name: string; arguments: string } } => call.type === "function")
     .map((call) => ({ name: call.function.name, arguments: call.function.arguments }));
+  const finishReason = choice?.finishReason ?? null;
+  const refusal = choice?.message?.refusal ?? null;
 
   // OpenRouter model ids are namespaced "<provider>/<model>" (e.g.
   // "openai/gpt-5.4-mini"); the SDK's typed response has no simpler
@@ -154,5 +160,7 @@ export async function sendChatCompletion(
     totalTokens: response.usage?.totalTokens ?? null,
     cost: response.usage?.cost ?? null,
     toolCalls,
+    finishReason,
+    refusal,
   };
 }

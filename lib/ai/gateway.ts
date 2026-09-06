@@ -8,7 +8,7 @@ import { routeAndCall } from "./router";
 import { validateStructuredOutput, toJsonSchemaResponseFormat } from "./structured-output";
 import { recordUsage } from "./usage";
 import { isKnownTaskAlias } from "./model-registry";
-import { AIGatewayError, type AIErrorCode } from "./errors";
+import { AIGatewayError, logStructuredOutputFailure, type AIErrorCode } from "./errors";
 import type { ChatMessage } from "./client";
 
 export interface RequestAIParams<T> {
@@ -96,29 +96,96 @@ export async function requestAI<T = string>(params: RequestAIParams<T>): Promise
       ? toJsonSchemaResponseFormat(params.schemaName ?? "result", params.schema)
       : undefined;
 
-    const callResult = await routeAndCall({
-      alias,
-      messages,
-      classification: built.classification,
-      jsonSchema,
-    });
+    // A structured-output response that fails to validate (malformed JSON,
+    // a refusal, or empty content) is retried exactly ONCE, since every
+    // requestAI call is inherently read-only content generation -- a
+    // mutation only ever happens later, via lib/ai/tools/executor.ts, after
+    // this call has already returned a valid result. Never retried for a
+    // refusal (asking the same question again won't change a safety
+    // decision) or once already retried once.
+    let lastAttemptDiagnostics: {
+      finishReason: string | null;
+      contentLength: number;
+      hadToolCalls: boolean;
+      hadRefusal: boolean;
+      actualModel: string | null;
+      provider: string | null;
+    } | null = null;
 
-    requestedModel = callResult.requestedModel;
-    actualModel = callResult.actualModel;
-    provider = callResult.provider;
-    inputTokens = callResult.inputTokens;
-    outputTokens = callResult.outputTokens;
-    totalTokens = callResult.totalTokens;
-    estimatedCost = callResult.cost;
+    async function attempt(): Promise<T> {
+      const callResult = await routeAndCall({
+        alias,
+        messages,
+        classification: built.classification,
+        jsonSchema,
+      });
 
-    const data = params.schema
-      ? validateStructuredOutput(callResult.content, params.schema)
-      : ((callResult.content as unknown) as T);
+      requestedModel = callResult.requestedModel;
+      actualModel = callResult.actualModel;
+      provider = callResult.provider;
+      inputTokens = callResult.inputTokens;
+      outputTokens = callResult.outputTokens;
+      totalTokens = callResult.totalTokens;
+      estimatedCost = callResult.cost;
+      lastAttemptDiagnostics = {
+        finishReason: callResult.finishReason ?? null,
+        contentLength: callResult.content?.length ?? 0,
+        hadToolCalls: (callResult.toolCalls?.length ?? 0) > 0,
+        hadRefusal: Boolean(callResult.refusal),
+        actualModel: callResult.actualModel,
+        provider: callResult.provider,
+      };
+
+      if (callResult.refusal) {
+        throw new AIGatewayError("MODEL_REFUSAL", "The AI declined to respond to that request.");
+      }
+      if (!params.schema) {
+        return callResult.content as unknown as T;
+      }
+      if (callResult.content.trim().length === 0) {
+        throw new AIGatewayError("EMPTY_RESPONSE", "The AI returned an empty response.");
+      }
+      return validateStructuredOutput(callResult.content, params.schema);
+    }
+
+    let data: T;
+    try {
+      data = await attempt();
+    } catch (firstErr) {
+      const canRetry =
+        firstErr instanceof AIGatewayError &&
+        (firstErr.code === "INVALID_STRUCTURED_OUTPUT" || firstErr.code === "EMPTY_RESPONSE");
+      if (!canRetry) throw firstErr;
+      try {
+        data = await attempt();
+      } catch (secondErr) {
+        const d = lastAttemptDiagnostics ?? {
+          finishReason: null,
+          contentLength: 0,
+          hadToolCalls: false,
+          hadRefusal: false,
+          actualModel: null,
+          provider: null,
+        };
+        logStructuredOutputFailure({
+          alias,
+          schemaName: params.schemaName ?? "result",
+          requestedModel: requestedModel ?? "unknown",
+          finishReason: d.finishReason,
+          contentLength: d.contentLength,
+          hadToolCalls: d.hadToolCalls,
+          hadRefusal: d.hadRefusal,
+          actualModel: d.actualModel,
+          provider: d.provider,
+        });
+        throw secondErr;
+      }
+    }
 
     return {
       data,
-      actualModel: callResult.actualModel,
-      provider: callResult.provider,
+      actualModel: actualModel ?? "",
+      provider,
       latencyMs: Date.now() - startedAt,
     };
   } catch (err) {

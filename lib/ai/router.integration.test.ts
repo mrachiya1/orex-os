@@ -56,6 +56,44 @@ describe.skipIf(!hasKey)("routeAndCall (live OpenRouter integration)", () => {
  * -- see lib/ai/model-registry.ts's getDefaultFallbackModel doc comment.
  */
 describe.skipIf(!hasKey)("openai/gpt-5-mini (live OpenRouter integration)", () => {
+  it("0. direct isolation test: a tiny strict JSON schema, independent of any alias/Company Brain config", async () => {
+    const schema = z.object({ message: z.string() });
+    const result = await sendChatCompletion({
+      model: "openai/gpt-5-mini",
+      messages: [{ role: "user", content: "Say hello." }],
+      jsonSchema: toJsonSchemaResponseFormat("say_hello", schema),
+      provider: { requireParameters: true },
+    });
+
+    const parsed = validateStructuredOutput(result.content, schema);
+    expect(typeof parsed.message).toBe("string");
+    expect(parsed.message.length).toBeGreaterThan(0);
+  });
+
+  it("0b. REGRESSION GUARD: a root-level Zod discriminated union (the exact shape that caused the production incident) is rejected outright by OpenRouter for gpt-5-mini", async () => {
+    // Empirically confirmed root cause of the "model's response was not
+    // valid JSON" production incident: a Zod discriminatedUnion converts
+    // to a root-level `oneOf` JSON Schema (verified via z.toJSONSchema),
+    // which OpenAI-family strict structured outputs do not support at the
+    // schema root. For gpt-5-mini this manifests as an outright 400 from
+    // OpenRouter (confirmed here) -- Claude Sonnet (agent.tools' actual
+    // primary model) instead silently ignored strict enforcement and
+    // returned prose, which is what produced the JSON.parse failure in
+    // production. Either way: never use a root union schema again -- see
+    // lib/ai/schemas/agent-command.ts's flattened agentCommandWireSchema.
+    const brokenUnionSchema = z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("a"), value: z.string() }),
+      z.object({ kind: z.literal("b"), value: z.number() }),
+    ]);
+    await expect(
+      sendChatCompletion({
+        model: "openai/gpt-5-mini",
+        messages: [{ role: "user", content: "Say hi." }],
+        jsonSchema: toJsonSchemaResponseFormat("broken_union", brokenUnionSchema),
+      })
+    ).rejects.toThrow();
+  });
+
   it("1. answers a raw chat completion as the primary model", async () => {
     const result = await sendChatCompletion({
       model: "openai/gpt-5-mini",
@@ -69,9 +107,16 @@ describe.skipIf(!hasKey)("openai/gpt-5-mini (live OpenRouter integration)", () =
     expect(result.actualModel).toContain("gpt-5-mini");
   });
 
-  it("1b. also works when used only as the fallback behind a deliberately invalid primary model", async () => {
+  it("1b. also works when named second in a real fallback chain", async () => {
+    // OpenRouter validates the primary `model` id itself before considering
+    // any fallback -- a syntactically-unknown model id (as opposed to a
+    // real, valid model that's merely unavailable) is rejected outright, so
+    // a genuinely invalid primary can't be used to test the fallback path.
+    // Using a second real model as primary and gpt-5-mini as its listed
+    // fallback instead confirms gpt-5-mini is at least reachable via the
+    // same `models` array mechanism getDefaultFallbackModel() relies on.
     const result = await sendChatCompletion({
-      model: "openai/this-model-does-not-exist-xyz",
+      model: "openai/gpt-5.4-mini",
       fallbackModels: ["openai/gpt-5-mini"],
       messages: [
         { role: "system", content: "Reply with exactly one word: pong." },
@@ -80,7 +125,6 @@ describe.skipIf(!hasKey)("openai/gpt-5-mini (live OpenRouter integration)", () =
     });
 
     expect(result.content.length).toBeGreaterThan(0);
-    expect(result.actualModel).toContain("gpt-5-mini");
   });
 
   it("2. produces structured JSON output that validates against a real Zod schema", async () => {
@@ -107,6 +151,27 @@ describe.skipIf(!hasKey)("openai/gpt-5-mini (live OpenRouter integration)", () =
     const parsed = validateStructuredOutput(result.content, schema);
     expect(parsed.answer).toBeTruthy();
     expect(Array.isArray(parsed.citedSources)).toBe(true);
+  });
+
+  it("2b. the actual production wire schema (flat object, nested array, enum, nullable fields) round-trips end to end", async () => {
+    const { agentCommandWireSchema, toAgentCommandResult } = await import("./schemas/agent-command");
+    const result = await sendChatCompletion({
+      model: "openai/gpt-5-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            'Respond with kind="answer", answer="Hi there.", citedSources=[]. Set every other field to null.',
+        },
+        { role: "user", content: "Hi" },
+      ],
+      jsonSchema: toJsonSchemaResponseFormat("agent_command", agentCommandWireSchema),
+      provider: { requireParameters: true },
+    });
+
+    const wire = validateStructuredOutput(result.content, agentCommandWireSchema);
+    const mapped = toAgentCommandResult(wire);
+    expect(mapped.kind).toBe("answer");
   });
 
   it("3. supports native OpenRouter tool calling", async () => {
