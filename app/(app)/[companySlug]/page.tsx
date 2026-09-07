@@ -70,16 +70,15 @@ export default async function TodayPage({
   const user = await requireCurrentUser();
   const supabase = await createServerSupabaseClient();
 
-  const [{ displayName, roleLabel }, { data: organisation }] = await Promise.all([
+  const [{ displayName, roleLabel }, { data: organisation }, { data: projects }] = await Promise.all([
     getSidebarIdentity(user, company.id, company.organisation_id),
     supabase.from("organisations").select("name").eq("id", company.organisation_id).maybeSingle(),
+    supabase
+      .from("projects")
+      .select("id, name, project_code, status, target_date")
+      .eq("company_id", company.id)
+      .in("status", ONGOING_STATUSES),
   ]);
-
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("id, name, project_code, status, target_date")
-    .eq("company_id", company.id)
-    .in("status", ONGOING_STATUSES);
 
   const projectIds = (projects ?? []).map((p) => p.id);
   const projectById = new Map((projects ?? []).map((p) => [p.id, p]));

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createServerSupabaseClient } from "@/lib/database/server";
 import type { PermissionKey } from "./catalog";
 
@@ -15,11 +16,16 @@ export type { PermissionKey } from "./catalog";
  *
  * This calls the same SQL function RLS uses (via RPC) rather than
  * re-implementing the join in TypeScript, so the two layers cannot drift.
+ *
+ * React.cache() so repeated identical checks (same companyId + permissionKey,
+ * same authenticated session) within one request dedupe to a single RPC call.
+ * Different arguments always independently hit the database -- no check is
+ * ever skipped, weakened, or shared across users/requests.
  */
-export async function hasPermission(
+export const hasPermission = cache(async (
   companyId: string,
   permissionKey: PermissionKey
-): Promise<boolean> {
+): Promise<boolean> => {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.rpc("has_company_permission", {
     target_company_id: companyId,
@@ -31,12 +37,12 @@ export async function hasPermission(
   }
 
   return Boolean(data);
-}
+});
 
-export async function hasOrgPermission(
+export const hasOrgPermission = cache(async (
   organisationId: string,
   permissionKey: PermissionKey
-): Promise<boolean> {
+): Promise<boolean> => {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.rpc("has_org_permission", {
     target_organisation_id: organisationId,
@@ -48,7 +54,7 @@ export async function hasOrgPermission(
   }
 
   return Boolean(data);
-}
+});
 
 /**
  * Phase 004 project-level check. Mirrors has_project_access() exactly (see
@@ -59,10 +65,10 @@ export async function hasOrgPermission(
  * organisation. Project membership can only narrow access relative to
  * hasPermission, never widen it.
  */
-export async function hasProjectAccess(
+export const hasProjectAccess = cache(async (
   projectId: string,
   permissionKey: PermissionKey
-): Promise<boolean> {
+): Promise<boolean> => {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.rpc("has_project_access", {
     target_project_id: projectId,
@@ -74,7 +80,7 @@ export async function hasProjectAccess(
   }
 
   return Boolean(data);
-}
+});
 
 export async function requireProjectAccess(
   projectId: string,

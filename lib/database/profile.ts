@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createServerSupabaseClient } from "@/lib/database/server";
 import type { CurrentUser } from "@/lib/auth/session";
 
@@ -7,12 +8,17 @@ import type { CurrentUser } from "@/lib/auth/session";
  * is presentation only — it never gates access. Real authorization stays
  * with hasPermission/hasOrgPermission and RLS, which this deliberately does
  * not duplicate or short-circuit.
+ *
+ * React.cache() so the layout (sidebar) and the page (e.g. Today's greeting)
+ * share one pair of queries per request instead of duplicating both. Callers
+ * must pass the same CurrentUser reference (i.e. the result of the cached
+ * getCurrentUser()) for the cache to hit -- this is request-scoped only.
  */
-export async function getSidebarIdentity(
+export const getSidebarIdentity = cache(async (
   user: CurrentUser,
   companyId: string,
   organisationId: string
-): Promise<{ displayName: string | null; roleLabel: string | null }> {
+): Promise<{ displayName: string | null; roleLabel: string | null }> => {
   const supabase = await createServerSupabaseClient();
 
   const [{ data: profile }, { data: companyRole }] = await Promise.all([
@@ -43,7 +49,7 @@ export async function getSidebarIdentity(
     displayName: profile?.display_name ?? profile?.full_name ?? null,
     roleLabel,
   };
-}
+});
 
 function extractRoleLabel(row: { roles: { label: string } | { label: string }[] | null } | null): string | null {
   if (!row) return null;
