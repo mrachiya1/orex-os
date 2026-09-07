@@ -134,7 +134,6 @@ export function IntelligenceWorkspace({
       return null;
     }
     setSessionId(created.sessionId);
-    router.replace(`/${companySlug}/intelligence/chat/${created.sessionId}`, { scroll: false });
     return created.sessionId;
   }
 
@@ -147,6 +146,7 @@ export function IntelligenceWorkspace({
     addLocal("user", text);
 
     startTransition(async () => {
+      const isNewSession = sessionId === null;
       const id = await ensureSession(text);
       if (!id) return;
 
@@ -154,6 +154,11 @@ export function IntelligenceWorkspace({
       if (!result.ok) {
         setError(result.error);
         addLocal("system", result.error);
+        // The session and the user's message are already persisted even
+        // though the assistant call failed -- update the URL now so a
+        // refresh/remount lands on the real (non-empty) transcript instead
+        // of silently staying on /intelligence.
+        if (isNewSession) router.replace(`/${companySlug}/intelligence/chat/${id}`, { scroll: false });
         return;
       }
       addLocal("assistant", summarize(result.assistant), { kind: result.assistant.kind });
@@ -166,6 +171,16 @@ export function IntelligenceWorkspace({
           riskLabel: result.riskLabel,
         });
       }
+      // Deferred until both messages are durably persisted (see comment
+      // above submit was previously called from ensureSession() right after
+      // session creation -- before sendMessage() had written anything. That
+      // raced with the AI call: whenever the resulting route change forced
+      // a remount, IntelligenceWorkspace refetched initialMessages from a
+      // still-empty session and visibly reset the chat back to the welcome
+      // screen, often right as the assistant's reply came in. Firing the
+      // replace only now means any remount's refetch already sees the full
+      // exchange.
+      if (isNewSession) router.replace(`/${companySlug}/intelligence/chat/${id}`, { scroll: false });
     });
   }
 
