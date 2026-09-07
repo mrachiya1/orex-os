@@ -64,6 +64,7 @@ export function ContextRail({
   if (context.activeProjects !== null) contextRows.push({ label: "Active Projects", value: context.activeProjects });
   if (context.knowledgeItems !== null) contextRows.push({ label: "Company Brain", value: context.knowledgeItems });
   if (context.openDecisions !== null) contextRows.push({ label: "Open Decisions", value: context.openDecisions });
+  if (context.activeClients !== null) contextRows.push({ label: "Active Clients", value: context.activeClients });
 
   function toggleAgent(agentId: string, enabled: boolean) {
     setPendingId(agentId);

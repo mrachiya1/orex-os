@@ -82,6 +82,38 @@ export const hasProjectAccess = cache(async (
   return Boolean(data);
 });
 
+/**
+ * Phase 017 client-level check. Mirrors has_client_access() exactly (see
+ * supabase/migrations/0040_clients_project_linking.sql) -- an active
+ * company_members row for this client's company (further narrowed, for any
+ * role with roles.is_resource_scoped = true, to only clients the caller is
+ * staffed on via a linked project's project_members row), OR an active
+ * organisation_members row. Additive-only, same as hasProjectAccess.
+ */
+export const hasClientAccess = cache(async (
+  clientId: string,
+  permissionKey: PermissionKey
+): Promise<boolean> => {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("has_client_access", {
+    target_client_id: clientId,
+    permission_key: permissionKey,
+  });
+
+  if (error) {
+    throw new Error(`Permission check failed: ${error.message}`);
+  }
+
+  return Boolean(data);
+});
+
+export async function requireClientAccess(clientId: string, permissionKey: PermissionKey): Promise<void> {
+  const allowed = await hasClientAccess(clientId, permissionKey);
+  if (!allowed) {
+    throw new Error("Forbidden: missing required permission");
+  }
+}
+
 export async function requireProjectAccess(
   projectId: string,
   permissionKey: PermissionKey

@@ -20,6 +20,18 @@ export const PERMISSIONS = {
   CLIENTS_UPDATE: "clients.update",
   CLIENTS_DELETE: "clients.delete",
 
+  /**
+   * Phase 017: never implied by CLIENTS_READ/UPDATE. Sensitive contact PII
+   * (birthday, personal email/phone, private notes) lives in
+   * client_contact_private and is gated on these two keys only.
+   */
+  CLIENT_CONTACTS_READ_PRIVATE: "client_contacts.read_private",
+  CLIENT_CONTACTS_MANAGE_PRIVATE: "client_contacts.manage_private",
+
+  /** Phase 017: credential metadata (never a secret value) -- never implied by CLIENTS_READ/UPDATE. */
+  CLIENT_CREDENTIALS_READ_METADATA: "client_credentials.read_metadata",
+  CLIENT_CREDENTIALS_MANAGE: "client_credentials.manage",
+
   FINANCE_READ: "finance.read",
   FINANCE_CREATE: "finance.create",
   FINANCE_UPDATE: "finance.update",

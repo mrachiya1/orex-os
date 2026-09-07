@@ -1,6 +1,11 @@
 # 017 — Clients Intelligence V1
 
-Status: **DRAFT — AWAITING APPROVAL. No code has been written.**
+Status: **APPROVED — V1 implemented.** Migrations `0039`–`0045` are written
+and committed but have **not yet been applied** to the live Supabase
+project (this environment has no Supabase admin/CLI access) — they must be
+applied (`supabase db push` or the dashboard SQL editor, in order) before
+the new `/clients` routes will work in production. See the final report for
+full test results and the exact migration list.
 
 This is a schema + permissions + Action Engine + UI change. Per AGENTS.md working
 loop, this document is written, then implementation stops for approval.
@@ -140,20 +145,22 @@ created_by (fk user_profiles), created_at, updated_at, archived_at
 `status` and `relationship_stage` are deliberately separate columns (spec §57)
 — an Active client can independently be an At-Risk relationship.
 
-### `client_contacts`
+### `client_contacts` (business fields only — see Decision 2, §19)
 ```
 id, client_id not null, company_id not null,
 first_name not null, last_name, preferred_name,
-job_title, email, phone,
-birthday, timezone, country,
+job_title, business_email, business_phone,
+timezone, country,
 is_primary_contact boolean default false,
 last_interaction_at,
 created_at, updated_at
 ```
 Deliberately a **separate table from `user_profiles`** (spec §6) — external
-people, no auth identity, no company membership. `birthday`/personal
-phone/email are present but classified sensitive — see §Personal Data
-Privacy for the access boundary.
+people, no auth identity, no company membership. Sensitive personal fields
+(`birthday`, `personal_email`, `personal_phone`, `private_notes`) live in a
+separate `client_contact_private` table with its own stricter permissions —
+see §19 Decision 2 for the final, approved shape (supersedes the flat model
+originally sketched here).
 
 ### `client_brands`
 ```
@@ -599,14 +606,13 @@ Additive only, numbered sequentially from `0039`, following the observed
 one-concern-per-migration convention:
 
 ```
-0039_clients_core.sql            -- clients, client_contacts, client_brands + RLS
-0040_clients_project_linking.sql -- projects.client_id/client_brand_id/primary_client_contact_id + integrity constraint
+0039_clients_core.sql            -- clients, client_contacts, client_contact_private, client_brands, has_client_access() + RLS (incl. contractor narrowing)
+0040_clients_project_linking.sql -- projects.client_id/client_brand_id/primary_client_contact_id + project_value_minor/currency_code + integrity constraint
 0041_clients_relationship.sql    -- client_notes, client_preferences, client_feedback, client_relationship_issues + RLS
 0042_clients_activity.sql        -- client_activity (append-only) + RLS
 0043_clients_credentials.sql     -- client_credentials (metadata only) + RLS
-0044_clients_permissions.sql     -- client_credentials.read_metadata/.manage keys + role matrix
-0045_clients_resource_scoping.sql -- has_client_access() function + contractor-narrowed RLS branch
-0046_advisor_clients_read_tools.sql -- (pending your decision, §Open Decisions) grants advisor the 7 read-only clients.* tools
+0044_clients_permissions.sql     -- client_contacts.read_private/.manage_private + client_credentials.read_metadata/.manage keys + role matrix
+0045_advisor_clients_read_tools.sql -- grants advisor the 7 read-only clients.* tools (Decision 1)
 ```
 Each is independently reviewable and revertible; none touches historical
 migrations.
@@ -656,29 +662,85 @@ default-deny tier (flagged as an open decision, not silently deferred).
 
 ---
 
-## 19. Open decisions requiring your input before implementation
+## 19. Approved decisions (supersede §Open Decisions and the relevant sections above)
 
-1. **Advisor agent grant** (§7): grant the advisor the 7 read-only `clients.*`
-   tools in this same pass (migration `0046`), or hold off until after you've
-   used the feature manually for a while? Both are safe; this is a product
-   choice, not a security one.
-2. **Client-contact PII tier** (§9): keep birthday/personal phone/email as
-   ordinary fields under `clients.read` (simpler, matches how the rest of the
-   client record works), or split them into a stricter default-deny table
-   like `user_private_profiles` (more consistent with how *internal* team
-   PII is protected, but adds a table and a permission check most roles will
-   never need)?
-3. **Client value property matching** (§3): the "Value"/"Project Value"/
-   "Price" custom-property name allow-list is a heuristic given there's no
-   fixed schema field — acceptable for v1, or would you rather I add a real
-   `estimated_value` column to `projects` in this same pass (a slightly
-   bigger, but more correct, change)?
+### Decision 1 — Founder Advisor client access
+Grant the advisor agent **only** the 7 read-only tools:
+`clients.search`, `clients.get`, `clients.projects.list`,
+`clients.timeline.list`, `clients.preferences.list`, `clients.feedback.list`,
+`clients.issues.list`. No mutation tool is granted in V1. Recorded explicitly
+in migration `0045_advisor_clients_read_tools.sql` (same `array(select
+distinct unnest(allowed_tools || array[...]))` pattern as `0037`/`0038` —
+an explicit, auditable allowlist edit, never a wildcard/domain grant).
+
+### Decision 2 — Client contact PII split
+`client_contacts` (§2) is revised to **business fields only**:
+`first_name, last_name, preferred_name, job_title, business_email,
+business_phone, timezone, country, is_primary_contact, last_interaction_at`.
+A new table, **`client_contact_private`** (1:1, `contact_id primary key
+references client_contacts(id) on delete cascade`), holds
+`birthday, personal_email, personal_phone, private_notes` — mirroring
+`user_private_profiles`' default-deny shape, but scoped to
+company-permission (not self-only, since a client contact has no auth
+identity) via two **new, narrow** permission keys:
+`client_contacts.read_private` / `client_contacts.manage_private`.
+Ordinary `clients.read`/`clients.update` (reused, §10) covers
+`client_contacts` (business fields) same as every other client sub-resource;
+it does **not** grant access to `client_contact_private` under any
+circumstance. Role matrix (least privilege, explicit — never inferred from
+role name at runtime): **founder** gets both private keys at the
+company/org scope their membership already covers; **director, manager,
+member, contractor, viewer get neither** by default (grantable later via
+`company_members.permission_overrides`, same mechanism every other
+permission already uses — no new mechanism needed). Numerology/"Personal
+Lens" is **not built at all** in V1 (not even a labeled stub) — `birthday`
+lives in the private tier and has no consumer yet.
+
+### Decision 3 — Real typed Project Value
+Replace the custom-property heuristic entirely. Additive migration on
+`projects`:
+```
+project_value_minor bigint check (project_value_minor is null or project_value_minor >= 0)
+currency_code char(3) check (currency_code is null or currency_code ~ '^[A-Z]{3}$')
+```
+Integer minor units (e.g. `350000` + `USD` = USD 3,500.00) — never
+floating-point money. Both nullable independently (a value can exist
+without... no — enforced together: the update action rejects a value set
+without a currency and vice versa; the DB only enforces shape, the
+application layer enforces the pairing, matching how `internal_notes_
+classification`-style enum validation is already split between DB CHECK and
+Zod elsewhere in this repo). **Semantics** (documented, not just coded):
+Project Value = the current agreed/commercial value of the project. It is
+**not** cash received, recognized revenue, profit, invoice amount, or
+receivable — those belong to the future Finance/Transactions modules, which
+this phase does not touch. **Security**: uses the existing `projects.read`/
+`projects.update` permissions (via `has_project_access`) — no new financial
+permission, since Project Value is scoped exactly like every other project
+field a Contractor might or might not see, and creating a parallel
+permission for one field would fragment the catalog for no real gain.
+**Currency validation**: the DB CHECK only validates *shape* (3 uppercase
+letters); the real ISO-4217 membership check lives in
+`lib/finance/currency.ts` (a curated common-currency list) at the Zod
+validation layer, matching this repo's existing split between DB-level shape
+constraints and application-level business validation (e.g. `internal_notes_
+classification`). **Old custom-property data is left untouched** —
+no fuzzy-name migration of any existing "Value"/"Cost"/"Budget"/"Price"
+custom property. **Client value aggregation is currency-aware, never
+summed across currencies**: `Lifetime/Active/Completed/Average Project
+Value` are computed **per currency** (e.g. "USD 8,400" and "LKR 320,000"
+shown separately) — no invented FX rate, ever. A project with a null value
+is simply excluded from the total (never treated as zero), and a client
+whose linked projects have no value data at all shows "Not tracked."
+Aggregation is computed from one batched `.in("client_id", ids)`-style query
+across a client's linked projects, grouped by `currency_code` in application
+code — not one query per client (§Performance, unchanged).
 
 ---
 
-## Approval required: YES
+## Approval required: NO — approved 2026-09-07, proceeding to implementation.
 
-This introduces 8 new tables, 2 new permission keys, a new RLS-authorization
-function, new Action Engine tools, and new routes. Per AGENTS.md, implementation
-does not begin until this document is approved — including the 3 open
-decisions above.
+This introduces 9 new tables (8 from §2 + `client_contact_private`), 2 new
+core client-contact-private permission keys (+2 credential keys from §10),
+2 new columns on `projects`, a new RLS-authorization function, new Action
+Engine tools (7 granted read-only to the advisor agent per Decision 1), and
+new routes.

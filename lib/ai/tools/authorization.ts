@@ -1,4 +1,4 @@
-import { hasPermission, hasOrgPermission, hasProjectAccess } from "@/lib/permissions";
+import { hasPermission, hasOrgPermission, hasProjectAccess, hasClientAccess } from "@/lib/permissions";
 import type { AnyToolDefinition } from "./types";
 
 export class ToolAuthorizationError extends Error {
@@ -28,6 +28,16 @@ export async function authorizeToolCall(
     }
     const allowed = await hasProjectAccess(projectId, tool.requiredPermission);
     if (!allowed) throw new ToolAuthorizationError("You don't have permission to do that on this project.");
+    return;
+  }
+
+  if (tool.scopeType === "client") {
+    const clientId = input.clientId;
+    if (typeof clientId !== "string") {
+      throw new ToolAuthorizationError(`Tool "${tool.name}" is client-scoped but no clientId was provided.`);
+    }
+    const allowed = await hasClientAccess(clientId, tool.requiredPermission);
+    if (!allowed) throw new ToolAuthorizationError("You don't have permission to do that for this client.");
     return;
   }
 

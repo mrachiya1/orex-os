@@ -12,7 +12,7 @@ import { Composer, AttachmentChip, type PendingAttachment } from "./Composer";
 import { ActionProposalCard } from "./ActionProposalCard";
 import { ConversationHistoryDrawer, type HistorySessionRow } from "./ConversationHistoryDrawer";
 import { ContextRail } from "./ContextRail";
-import { IconHistory, IconSettings, IconSparkle, IconProjects, IconBrain, IconDecisions } from "@/components/ui/icons";
+import { IconHistory, IconSettings, IconSparkle, IconProjects, IconBrain, IconDecisions, IconClients } from "@/components/ui/icons";
 import type { IntelligenceContextSummary } from "@/lib/intelligence/context";
 import type { RecentActivityRow } from "@/app/actions/agents";
 
@@ -264,6 +264,13 @@ export function IntelligenceWorkspace({
                 <IconDecisions width={13} height={13} className="text-[var(--text-muted)]" />
                 <span className="num">{contextSummary.openDecisions}</span>
                 <span className="text-[var(--text-muted)]">Open Decisions</span>
+              </div>
+            )}
+            {contextSummary.activeClients !== null && (
+              <div className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+                <IconClients width={13} height={13} className="text-[var(--text-muted)]" />
+                <span className="num">{contextSummary.activeClients}</span>
+                <span className="text-[var(--text-muted)]">Active Clients</span>
               </div>
             )}
             <Link

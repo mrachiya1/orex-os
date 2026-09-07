@@ -1,5 +1,5 @@
 import { requireCurrentUser } from "@/lib/auth/session";
-import { hasPermission, hasOrgPermission, hasProjectAccess } from "@/lib/permissions";
+import { hasPermission, hasOrgPermission, hasProjectAccess, hasClientAccess } from "@/lib/permissions";
 import { createServerSupabaseClient } from "@/lib/database/server";
 import { toSafeAIErrorMessage } from "@/lib/ai/errors";
 import { getAgent } from "@/lib/ai/agents/registry";
@@ -16,7 +16,7 @@ export type ExecuteToolResult =
   | { status: "pending_approval"; requestId: string };
 
 async function resolveScopeIds(
-  scopeType: "organisation" | "company" | "project",
+  scopeType: "organisation" | "company" | "project" | "client",
   input: Record<string, unknown>
 ): Promise<{ organisationId: string; companyId: string | null; projectId: string | null }> {
   const supabase = await createServerSupabaseClient();
@@ -31,6 +31,18 @@ async function resolveScopeIds(
     if (error) throw new Error(error.message);
     if (!data) throw new Error("Project not found");
     return { organisationId: data.organisation_id, companyId: data.company_id, projectId };
+  }
+
+  if (scopeType === "client") {
+    const clientId = input.clientId as string;
+    const { data, error } = await supabase
+      .from("clients")
+      .select("organisation_id, company_id")
+      .eq("id", clientId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("Client not found");
+    return { organisationId: data.organisation_id, companyId: data.company_id, projectId: null };
   }
 
   if (scopeType === "company") {
@@ -196,9 +208,11 @@ export async function approveActionRequest(
     const allowed =
       tool.scopeType === "project"
         ? await hasProjectAccess(request.project_id as string, tool.requiredPermission)
-        : request.company_id
-          ? await hasPermission(request.company_id, tool.requiredPermission)
-          : await hasOrgPermission(request.organisation_id, tool.requiredPermission);
+        : tool.scopeType === "client"
+          ? await hasClientAccess((request.input as { clientId?: string })?.clientId ?? "", tool.requiredPermission)
+          : request.company_id
+            ? await hasPermission(request.company_id, tool.requiredPermission)
+            : await hasOrgPermission(request.organisation_id, tool.requiredPermission);
     if (!allowed) {
       return { ok: false, error: "You don't have permission to approve this action." };
     }

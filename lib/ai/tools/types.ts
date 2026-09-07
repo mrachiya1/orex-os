@@ -31,11 +31,13 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   /**
    * How authorization is resolved: "project" checks hasProjectAccess
    * (deriving company/org from the project row itself, never from
-   * caller-supplied input); "company"/"organisation" check
-   * hasPermission/hasOrgPermission against an id present on the parsed
-   * input (see authorization.ts for the exact field each scope type reads).
+   * caller-supplied input); "client" checks hasClientAccess the same way,
+   * deriving company/org from the client row itself (prompts/017);
+   * "company"/"organisation" check hasPermission/hasOrgPermission against
+   * an id present on the parsed input (see authorization.ts for the exact
+   * field each scope type reads).
    */
-  scopeType: "organisation" | "company" | "project";
+  scopeType: "organisation" | "company" | "project" | "client";
   riskLevel: RiskLevel;
   inputSchema: z.ZodType<TInput>;
   handler: (input: TInput, actor: ActorContext) => Promise<TOutput>;

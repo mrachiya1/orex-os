@@ -54,7 +54,7 @@ function buildNav(slug: string, hasGroupAccess: boolean, canViewTeam: boolean): 
       items: [
         { label: "Projects", href: `/${slug}/projects`, icon: IconProjects },
         { label: "Delivery", href: `/${slug}/delivery-ready`, icon: IconDelivery },
-        { label: "Clients", icon: IconClients },
+        { label: "Clients", href: `/${slug}/clients`, icon: IconClients },
         { label: "Meetings", icon: IconMeetings },
       ],
     },

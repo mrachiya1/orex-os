@@ -6,6 +6,7 @@ export interface IntelligenceContextSummary {
   activeProjects: number | null;
   knowledgeItems: number | null;
   openDecisions: number | null;
+  activeClients: number | null;
 }
 
 /**
@@ -17,13 +18,14 @@ export interface IntelligenceContextSummary {
 export async function getIntelligenceContext(companyId: string): Promise<IntelligenceContextSummary> {
   const supabase = await createServerSupabaseClient();
 
-  const [canProjects, canKnowledge, canDecisions] = await Promise.all([
+  const [canProjects, canKnowledge, canDecisions, canClients] = await Promise.all([
     hasPermission(companyId, PERMISSIONS.PROJECTS_READ),
     hasPermission(companyId, PERMISSIONS.KNOWLEDGE_READ),
     hasPermission(companyId, PERMISSIONS.DECISIONS_READ),
+    hasPermission(companyId, PERMISSIONS.CLIENTS_READ),
   ]);
 
-  const [projectsResult, knowledgeResult, decisionsResult] = await Promise.all([
+  const [projectsResult, knowledgeResult, decisionsResult, clientsResult] = await Promise.all([
     canProjects
       ? supabase
           .from("projects")
@@ -41,11 +43,19 @@ export async function getIntelligenceContext(companyId: string): Promise<Intelli
           .eq("company_id", companyId)
           .not("status", "in", "(decided,closed)")
       : Promise.resolve({ count: null }),
+    canClients
+      ? supabase
+          .from("clients")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .is("archived_at", null)
+      : Promise.resolve({ count: null }),
   ]);
 
   return {
     activeProjects: canProjects ? (projectsResult.count ?? 0) : null,
     knowledgeItems: canKnowledge ? (knowledgeResult.count ?? 0) : null,
     openDecisions: canDecisions ? (decisionsResult.count ?? 0) : null,
+    activeClients: canClients ? (clientsResult.count ?? 0) : null,
   };
 }
